@@ -1,0 +1,104 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:hive_flutter/hive_flutter.dart';
+
+import 'package:pos_moloni_app/app.dart';
+import 'package:pos_moloni_app/core/constants/app_constants.dart';
+import 'package:pos_moloni_app/core/utils/logger.dart';
+
+void main() async {
+  // Garantir inicialização do Flutter
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Inicializar logger
+  AppLogger.i('🚀 Iniciando ${AppConstants.appName}...');
+
+  try {
+    // Configurar orientação da tela (forçar horizontal)
+    if (AppConstants.forceHorizontal) {
+      await SystemChrome.setPreferredOrientations([
+        DeviceOrientation.landscapeLeft,
+        DeviceOrientation.landscapeRight,
+      ]);
+      AppLogger.d('Orientação: Horizontal (forçado)');
+    }
+
+    // Inicializar Hive (database local)
+    await Hive.initFlutter();
+    AppLogger.d('Hive inicializado');
+
+    // TO DO: Abrir boxes do Hive quando necessário
+    // await Hive.openBox(ApiConstants.boxProducts);
+    // await Hive.openBox(ApiConstants.boxCategories);
+    // await Hive.openBox(ApiConstants.boxSettings);
+
+    // Configurar UI do sistema (status bar)
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.white,
+        systemNavigationBarIconBrightness: Brightness.dark,
+      ),
+    );
+
+    AppLogger.i('✅ Inicialização completa');
+
+    // Executar app com Riverpod
+    runApp(
+      const ProviderScope(
+        child: MyApp(),
+      ),
+    );
+  } catch (e, stackTrace) {
+    AppLogger.e('❌ Erro na inicialização', error: e, stackTrace: stackTrace);
+    
+    // Em caso de erro crítico, mostrar tela de erro
+    runApp(
+      MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24.0),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(
+                    Icons.error_outline,
+                    color: Colors.red,
+                    size: 64,
+                  ),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Erro ao inicializar aplicação',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    e.toString(),
+                    style: const TextStyle(fontSize: 14),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton(
+                    onPressed: () {
+                      // Tentar reiniciar
+                      SystemChannels.platform.invokeMethod('SystemNavigator.pop');
+                    },
+                    child: const Text('Fechar aplicação'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
