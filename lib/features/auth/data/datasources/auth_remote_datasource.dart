@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:pos_moloni_app/core/constants/api_constants.dart';
@@ -18,7 +21,6 @@ abstract class AuthRemoteDataSource {
 
 /// Implementação do datasource remoto usando Dio
 class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
-
   AuthRemoteDataSourceImpl({
     required this.dio,
     required this.storage,
@@ -36,7 +38,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
           ApiConstants.defaultMoloniApiUrl;
       final clientId = await storage.read(key: ApiConstants.keyClientId);
-      final clientSecret = await storage.read(key: ApiConstants.keyClientSecret);
+      final clientSecret =
+          await storage.read(key: ApiConstants.keyClientSecret);
 
       if (clientId == null || clientSecret == null) {
         throw const ConfigurationException(
@@ -55,11 +58,16 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
 
       final queryString = _buildQueryString(params);
       final url = '$apiUrl/${ApiConstants.grantEndpoint}?$queryString';
-
-      AppLogger.moloniApi('grant (login)', data: {
-        'username': username,
-        'grant_type': 'password',
-      },);
+      if (kDebugMode) {
+        print(url);
+      }
+      AppLogger.moloniApi(
+        'grant (login)',
+        data: {
+          'username': username,
+          'grant_type': 'password',
+        },
+      );
 
       // Fazer request
       final response = await dio.get(url);
@@ -68,9 +76,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       AppLogger.i('📡 Response Data Type: ${response.data.runtimeType}');
       AppLogger.i('📡 Response Data: ${response.data}');
 
-      // ✅ Verificar se status é 200 e data existe
+      // ✅ Verificar se status é 200
       if (response.statusCode == 200) {
-        // Tentar converter independentemente do tipo
         final data = response.data;
 
         if (data == null) {
@@ -80,13 +87,11 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           );
         }
 
-        // Se for String, fazer parse JSON
+        // ✅ Se for String (JSON como texto), fazer parse
         if (data is String) {
           try {
-            final Map<String, dynamic> jsonData =
-                (response.data as String).isEmpty
-                    ? {}
-                    : response.data as Map<String, dynamic>;
+            final jsonString = data.isEmpty ? '{}' : data;
+            final Map<String, dynamic> jsonData = jsonDecode(jsonString);
             final tokens = AuthTokensModel.fromJson(jsonData);
             AppLogger.auth('Login', success: true);
             return tokens;
@@ -96,12 +101,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           }
         }
 
-        // Se for Map, usar direto
+        // Se for Map (JSON como objeto), usar direto
         if (data is Map) {
-          final jsonData = Map<String, dynamic>.from(data);
-          final tokens = AuthTokensModel.fromJson(jsonData);
-          AppLogger.auth('Login', success: true);
-          return tokens;
+          try {
+            final jsonData = Map<String, dynamic>.from(data);
+            final tokens = AuthTokensModel.fromJson(jsonData);
+            AppLogger.auth('Login', success: true);
+            return tokens;
+          } catch (e) {
+            AppLogger.e('Erro ao converter tokens', error: e);
+            rethrow;
+          }
         }
 
         // Se for outra coisa, erro
@@ -151,7 +161,8 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
       final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
           ApiConstants.defaultMoloniApiUrl;
       final clientId = await storage.read(key: ApiConstants.keyClientId);
-      final clientSecret = await storage.read(key: ApiConstants.keyClientSecret);
+      final clientSecret =
+          await storage.read(key: ApiConstants.keyClientSecret);
 
       if (clientId == null || clientSecret == null) {
         throw const ConfigurationException(
@@ -189,11 +200,11 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           );
         }
 
-        // Se for String, fazer parse JSON
+        // ✅ Se for String (JSON como texto), fazer parse
         if (data is String) {
           try {
-            final Map<String, dynamic> jsonData =
-                data.isEmpty ? {} : data as Map<String, dynamic>;
+            final jsonString = data.isEmpty ? '{}' : data;
+            final Map<String, dynamic> jsonData = jsonDecode(jsonString);
             final tokens = AuthTokensModel.fromJson(jsonData);
             AppLogger.auth('Token refresh', success: true);
             return tokens;
@@ -203,12 +214,17 @@ class AuthRemoteDataSourceImpl implements AuthRemoteDataSource {
           }
         }
 
-        // Se for Map, usar direto
+        // Se for Map (JSON como objeto), usar direto
         if (data is Map) {
-          final jsonData = Map<String, dynamic>.from(data);
-          final tokens = AuthTokensModel.fromJson(jsonData);
-          AppLogger.auth('Token refresh', success: true);
-          return tokens;
+          try {
+            final jsonData = Map<String, dynamic>.from(data);
+            final tokens = AuthTokensModel.fromJson(jsonData);
+            AppLogger.auth('Token refresh', success: true);
+            return tokens;
+          } catch (e) {
+            AppLogger.e('Erro ao converter tokens', error: e);
+            rethrow;
+          }
         }
 
         throw ServerException(

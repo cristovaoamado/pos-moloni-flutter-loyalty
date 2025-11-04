@@ -5,12 +5,12 @@ class ApiConstants {
   // ==================== MOLONI API ====================
 
   /// URL base padrão da API Moloni
-  static const String defaultMoloniApiUrl = 'https://www.moloni.pt/api/v1';
+  static const String defaultMoloniApiUrl = 'https://api.moloni.pt/v1';
 
   // ==================== AUTHENTICATION ====================
 
   /// Endpoint de autenticação (grant)
-  static const String grantEndpoint = 'auth/grant';
+  static const String grantEndpoint = 'grant';
 
   /// Grant type: password
   static const String grantTypePassword = 'password';

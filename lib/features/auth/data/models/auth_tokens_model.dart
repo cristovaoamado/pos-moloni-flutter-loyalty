@@ -26,19 +26,29 @@ class AuthTokensModel extends AuthTokens {
     return AuthTokensModel(
       accessToken: json['access_token'] as String,
       refreshToken: json['refresh_token'] as String,
-      tokenType: json['token_type'] as String,
-      expiresIn: json['expires_in'] as int,
-      timestamp: DateTime.parse(json['timestamp'] as String),
+      tokenType: json['token_type'] as String? ?? 'Bearer',
+      expiresIn: json['expires_in'] as int? ?? 3600,
+      timestamp: json['timestamp'] != null
+          ? DateTime.parse(json['timestamp'] as String)
+          : DateTime.now(),
     );
   }
 
-  /// Cria model a partir de JSON (API response)
+  /// Cria model a partir de JSON (API response do Moloni)
+  /// API Response format:
+  /// {
+  ///   "access_token": "...",
+  ///   "refresh_token": "...",
+  ///   "token_type": "bearer",
+  ///   "expires_in": 3600,
+  ///   "scope": null
+  /// }
   factory AuthTokensModel.fromJson(Map<String, dynamic> json) {
     return AuthTokensModel(
-      accessToken: json['access_token'] as String,
-      refreshToken: json['refresh_token'] as String,
+      accessToken: json['access_token'] as String? ?? '',
+      refreshToken: json['refresh_token'] as String? ?? '',
       tokenType: json['token_type'] as String? ?? 'Bearer',
-      expiresIn: json['expires_in'] as int,
+      expiresIn: json['expires_in'] as int? ?? 3600,
       timestamp: DateTime.now(), // Timestamp de quando recebemos
     );
   }
