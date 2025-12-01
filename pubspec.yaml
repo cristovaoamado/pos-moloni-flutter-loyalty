@@ -45,6 +45,11 @@ dependencies:
   
   # Logger
   logger: ^2.0.2
+  shared_preferences: ^2.5.3
+  uuid: ^4.5.2
+  printing: ^5.14.2
+  pdf: ^3.11.3
+  path_provider: ^2.1.5
 
 dev_dependencies:
   flutter_test:

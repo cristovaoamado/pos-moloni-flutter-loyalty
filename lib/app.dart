@@ -10,27 +10,45 @@ import 'package:pos_moloni_app/features/company/presentation/providers/company_p
 import 'package:pos_moloni_app/features/company/presentation/screens/company_selection_screen.dart';
 import 'package:pos_moloni_app/features/pos/presentation/screens/pos_screen.dart';
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppLogger.i('🎨 Building MyApp');
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
 
-    // Observar estado de autenticação
-    final authState = ref.watch(authProvider);
+class _MyAppState extends ConsumerState<MyApp> {
+  bool _initialized = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeAuth();
+    });
+  }
+
+  Future<void> _initializeAuth() async {
+    AppLogger.i('🚀 Iniciando verificação de autenticação...');
+
+    // Inicializar autenticação (verifica token/credenciais guardadas)
+    await ref.read(authProvider.notifier).initialize();
+
+    if (mounted) {
+      setState(() => _initialized = true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLogger.d('🎨 Building MyApp (initialized: $_initialized)');
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: AppConstants.appName,
       theme: AppTheme.lightTheme,
-
-      // Navegação baseada em estado de autenticação
-      home: _buildHome(authState),
-
-      // Builder para capturar contexto global (útil para SnackBars, Dialogs)
+      home: _buildHome(),
       builder: (context, child) {
-        // Prevenir que o texto escale além do normal (acessibilidade)
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
             textScaler: TextScaler.noScaling,
@@ -41,19 +59,26 @@ class MyApp extends ConsumerWidget {
     );
   }
 
-  Widget _buildHome(AuthState authState) {
-    // Se estiver carregando (verificando auto-login)
-    if (authState.isLoading && !authState.isAuthenticated) {
+  Widget _buildHome() {
+    // Se ainda não inicializou, mostrar splash
+    if (!_initialized) {
       return const _SplashScreen();
     }
 
-    // Se autenticado
+    // Observar estado de autenticação
+    final authState = ref.watch(authProvider);
+
+    // Se está a carregar (após inicialização), mostrar splash
+    if (authState.isLoading) {
+      return const _SplashScreen();
+    }
+
+    // Se autenticado, verificar empresa
     if (authState.isAuthenticated) {
-      // Verificar se tem empresa selecionada
       return const _AuthenticatedFlow();
     }
 
-    // Se não autenticado, mostrar tela de login
+    // Se não autenticado, mostrar login
     return const LoginScreen();
   }
 }
@@ -65,28 +90,66 @@ class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.point_of_sale_rounded,
-              size: 100,
-              color: Theme.of(context).colorScheme.primary,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              AppConstants.appName,
-              style: Theme.of(context).textTheme.headlineLarge,
-            ),
-            const SizedBox(height: 48),
-            const CircularProgressIndicator(),
-            const SizedBox(height: 16),
-            Text(
-              'A carregar...',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Theme.of(context).colorScheme.primary,
+              Theme.of(context).colorScheme.primaryContainer,
+            ],
+          ),
+        ),
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo
+              Container(
+                width: 120,
+                height: 120,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.2),
+                      blurRadius: 20,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  Icons.point_of_sale_rounded,
+                  size: 64,
+                  color: Theme.of(context).colorScheme.primary,
+                ),
+              ),
+              const SizedBox(height: 32),
+              Text(
+                AppConstants.appName,
+                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+              ),
+              const SizedBox(height: 48),
+              const SizedBox(
+                width: 32,
+                height: 32,
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  strokeWidth: 3,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'A verificar sessão...',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -99,7 +162,6 @@ class _AuthenticatedFlow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    // Observar o estado completo para reagir a mudanças
     final companyState = ref.watch(companyProvider);
     final hasSelectedCompany = companyState.selectedCompany != null;
 

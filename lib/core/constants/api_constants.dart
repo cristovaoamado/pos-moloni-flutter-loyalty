@@ -25,8 +25,8 @@ class ApiConstants {
 
   // ==================== PRODUCTS ====================
 
-  /// Endpoint para pesquisar produtos
-  static const String productsSearch = 'products/search';
+  /// Endpoint para pesquisar produtos (CORRIGIDO: era 'products/search')
+  static const String productsSearch = 'products/getBySearch';
 
   /// Endpoint para obter produto por código de barras
   static const String productsGetByBarcode = 'products/getByBarcode';

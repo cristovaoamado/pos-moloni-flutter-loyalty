@@ -18,20 +18,25 @@ class LoginScreen extends ConsumerStatefulWidget {
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
-  void initState() {
-    super.initState();
-    
-    // Escutar mudanças no estado de autenticação
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.listen<AuthState>(authProvider, (previous, next) {
-        // Se autenticado, navegar para seleção de empresa
+  Widget build(BuildContext context) {
+    final authState = ref.watch(authProvider);
+    final hasValidSettings = ref.watch(hasValidSettingsProvider);
+
+    // === LISTENER — tem de ficar no build ===
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      Future.microtask(() {
+        if (!mounted) return;
+
+        // Login OK → navegar
         if (next.isAuthenticated && !next.isLoading) {
           Navigator.of(context).pushReplacement(
-            MaterialPageRoute(builder: (_) => const CompanySelectionScreen()),
+            MaterialPageRoute(
+              builder: (_) => const CompanySelectionScreen(),
+            ),
           );
         }
 
-        // Se houver erro, mostrar snackbar
+        // Erro → snackbar
         if (next.error != null && !next.isLoading) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -39,23 +44,13 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               backgroundColor: Colors.red,
             ),
           );
-          
-          // Limpar erro após mostrar
-          Future.delayed(const Duration(seconds: 3), () {
-            if (mounted) {
-              ref.read(authProvider.notifier).clearError();
-            }
-          });
+
+          ref.read(authProvider.notifier).clearError();
         }
       });
     });
-  }
 
-  @override
-  Widget build(BuildContext context) {
-    final authState = ref.watch(authProvider);
-    final hasValidSettings = ref.watch(hasValidSettingsProvider);
-
+    // === UI ===
     return Scaffold(
       body: SafeArea(
         child: Center(
@@ -64,15 +59,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                // Logo ou ícone
                 Icon(
                   Icons.point_of_sale_rounded,
                   size: 100,
                   color: Theme.of(context).colorScheme.primary,
                 ),
                 const SizedBox(height: 24),
-
-                // Título
                 Text(
                   AppConstants.appName,
                   style: Theme.of(context).textTheme.headlineLarge?.copyWith(
@@ -81,8 +73,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                 ),
                 const SizedBox(height: 8),
-
-                // Subtítulo
                 Text(
                   'Faça login para continuar',
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
@@ -90,8 +80,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                 ),
                 const SizedBox(height: 48),
-
-                // Aviso se não tiver configurações
                 if (!hasValidSettings) ...[
                   Container(
                     padding: const EdgeInsets.all(16),
@@ -116,7 +104,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               child: Text(
                                 'Configuração necessária',
                                 style: TextStyle(
-                                  color: Theme.of(context).colorScheme.onErrorContainer,
+                                  color: Theme.of(context)
+                                      .colorScheme
+                                      .onErrorContainer,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -127,7 +117,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         Text(
                           'Configure as credenciais da API Moloni antes de fazer login.',
                           style: TextStyle(
-                            color: Theme.of(context).colorScheme.onErrorContainer,
+                            color:
+                                Theme.of(context).colorScheme.onErrorContainer,
                             fontSize: 12,
                           ),
                         ),
@@ -135,15 +126,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     ),
                   ),
                 ],
-
-                // Formulário de login
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 400),
                   child: const LoginForm(),
                 ),
                 const SizedBox(height: 24),
-
-                // Botão para configurações
                 ElevatedButton.icon(
                   onPressed: () {
                     Navigator.of(context).push(
@@ -163,8 +150,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         : Colors.white,
                   ),
                 ),
-
-                // Loading indicator no rodapé (se estiver carregando)
                 if (authState.isLoading) ...[
                   const SizedBox(height: 24),
                   const CircularProgressIndicator(),

@@ -32,11 +32,17 @@ class CompanyRemoteDataSourceImpl implements CompanyRemoteDataSource {
         throw const AuthenticationException('Token de acesso não encontrado');
       }
 
-      final url = '$apiUrl/${ApiConstants.companiesGetAll}?access_token=$accessToken';
+      // A API Moloni usa POST para companies/getAll (sem body)
+      final url = '$apiUrl/${ApiConstants.companiesGetAll}/?access_token=$accessToken';
 
       AppLogger.moloniApi('companies/getAll');
+      AppLogger.d('🌐 URL: $url');
 
-      final response = await dio.get(url);
+      // Usar POST em vez de GET - a API Moloni requer POST
+      final response = await dio.post(url);
+
+      AppLogger.d('📦 Response status: ${response.statusCode}');
+      AppLogger.d('📦 Response data: ${response.data}');
 
       if (response.statusCode == 200 && response.data is List) {
         final companies = (response.data as List)
@@ -53,6 +59,7 @@ class CompanyRemoteDataSourceImpl implements CompanyRemoteDataSource {
       );
     } on DioException catch (e) {
       AppLogger.e('Erro ao carregar empresas', error: e);
+      AppLogger.d('📦 Response data: ${e.response?.data}');
 
       if (e.response?.statusCode == 401) {
         throw const TokenExpiredException();

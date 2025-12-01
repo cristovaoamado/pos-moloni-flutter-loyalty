@@ -1,303 +1,202 @@
+import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/auth/presentation/providers/auth_provider.dart';
-import 'package:pos_moloni_app/features/products/data/datasources/product_local_datasource.dart';
 import 'package:pos_moloni_app/features/products/data/datasources/product_remote_datasource.dart';
-import 'package:pos_moloni_app/features/products/data/repositories/product_repository_impl.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
-import 'package:pos_moloni_app/features/products/domain/repositories/product_repository.dart';
-import 'package:pos_moloni_app/features/products/domain/usecases/search_products_usecase.dart';
-import 'package:pos_moloni_app/features/products/domain/usecases/product_usecases.dart' show GetProductByBarcodeUseCase, GetProductByReferenceUseCase, GetCachedProductsUseCase, ClearProductsCacheUseCase;
 
-// ==================== PROVIDERS DE DEPENDÊNCIAS ====================
-
-/// Provider do ProductLocalDataSource
-final productLocalDataSourceProvider = Provider<ProductLocalDataSource>((ref) {
-  return ProductLocalDataSourceImpl();
-});
-
-/// Provider do ProductRemoteDataSource
-final productRemoteDataSourceProvider = Provider<ProductRemoteDataSource>((ref) {
-  return ProductRemoteDataSourceImpl(
-    dio: ref.watch(dioProvider),
-    storage: ref.watch(secureStorageProvider),
-  );
-});
-
-/// Provider do ProductRepository
-final productRepositoryProvider = Provider<ProductRepository>((ref) {
-  return ProductRepositoryImpl(
-    remoteDataSource: ref.watch(productRemoteDataSourceProvider),
-    localDataSource: ref.watch(productLocalDataSourceProvider),
-  );
-});
-
-// ==================== PROVIDERS DE USE CASES ====================
-
-/// Provider do SearchProductsUseCase
-final searchProductsUseCaseProvider = Provider<SearchProductsUseCase>((ref) {
-  return SearchProductsUseCase(ref.watch(productRepositoryProvider));
-});
-
-/// Provider do GetProductByBarcodeUseCase
-final getProductByBarcodeUseCaseProvider = Provider<GetProductByBarcodeUseCase>((ref) {
-  return GetProductByBarcodeUseCase(ref.watch(productRepositoryProvider));
-});
-
-/// Provider do GetProductByReferenceUseCase
-final getProductByReferenceUseCaseProvider =
-    Provider<GetProductByReferenceUseCase>((ref) {
-  return GetProductByReferenceUseCase(ref.watch(productRepositoryProvider));
-});
-
-/// Provider do GetCachedProductsUseCase
-final getCachedProductsUseCaseProvider = Provider<GetCachedProductsUseCase>((ref) {
-  return GetCachedProductsUseCase(ref.watch(productRepositoryProvider));
-});
-
-/// Provider do ClearProductsCacheUseCase
-final clearProductsCacheUseCaseProvider = Provider<ClearProductsCacheUseCase>((ref) {
-  return ClearProductsCacheUseCase(ref.watch(productRepositoryProvider));
-});
-
-// ==================== PROVIDER DE ESTADO ====================
-
-/// Estado de produtos
+/// Estado dos produtos com suporte a paginação
 class ProductState {
   const ProductState({
     this.products = const [],
-    this.selectedProduct,
     this.isLoading = false,
+    this.isLoadingMore = false,
     this.error,
-    this.lastQuery = '',
+    this.currentQuery = '',
+    this.currentOffset = 0,
+    this.totalCount = 0,
   });
 
   final List<Product> products;
-  final Product? selectedProduct;
   final bool isLoading;
+  final bool isLoadingMore;
   final String? error;
-  final String lastQuery;
+  final String currentQuery;
+  final int currentOffset;
+  final int totalCount;
+
+  bool get hasMore => currentOffset < totalCount;
+  
+  /// Página atual (1-based)
+  int get currentPage => (currentOffset / 50).floor() + 1;
+  
+  /// Total de páginas
+  int get totalPages => (totalCount / 50).ceil();
 
   ProductState copyWith({
     List<Product>? products,
-    Product? selectedProduct,
     bool? isLoading,
+    bool? isLoadingMore,
     String? error,
-    String? lastQuery,
+    String? currentQuery,
+    int? currentOffset,
+    int? totalCount,
   }) {
     return ProductState(
       products: products ?? this.products,
-      selectedProduct: selectedProduct ?? this.selectedProduct,
       isLoading: isLoading ?? this.isLoading,
+      isLoadingMore: isLoadingMore ?? this.isLoadingMore,
       error: error,
-      lastQuery: lastQuery ?? this.lastQuery,
+      currentQuery: currentQuery ?? this.currentQuery,
+      currentOffset: currentOffset ?? this.currentOffset,
+      totalCount: totalCount ?? this.totalCount,
     );
   }
 }
 
-/// Notifier para gestão do estado de produtos
+/// Provider do datasource
+final productDataSourceProvider = Provider<ProductRemoteDataSource>((ref) {
+  final dio = Dio();
+  final secureStorage = ref.watch(secureStorageProvider);
+  return ProductRemoteDataSourceImpl(dio: dio, storage: secureStorage);
+});
+
+/// Provider principal de produtos
+final productProvider = StateNotifierProvider<ProductNotifier, ProductState>((ref) {
+  final dataSource = ref.watch(productDataSourceProvider);
+  return ProductNotifier(dataSource);
+});
+
+/// Notifier para gerir estado dos produtos
 class ProductNotifier extends StateNotifier<ProductState> {
-  ProductNotifier({
-    required this.searchProductsUseCase,
-    required this.getProductByBarcodeUseCase,
-    required this.getProductByReferenceUseCase,
-    required this.getCachedProductsUseCase,
-    required this.clearProductsCacheUseCase,
-  }) : super(const ProductState()) {
-    // Carregar produtos cacheados ao inicializar
-    _loadCachedProducts();
-  }
+  ProductNotifier(this._dataSource) : super(const ProductState());
 
-  final SearchProductsUseCase searchProductsUseCase;
-  final GetProductByBarcodeUseCase getProductByBarcodeUseCase;
-  final GetProductByReferenceUseCase getProductByReferenceUseCase;
-  final GetCachedProductsUseCase getCachedProductsUseCase;
-  final ClearProductsCacheUseCase clearProductsCacheUseCase;
+  final ProductRemoteDataSource _dataSource;
+  static const int _pageSize = 50;
 
-  /// Carregar produtos cacheados
-  Future<void> _loadCachedProducts() async {
-    final result = await getCachedProductsUseCase();
-
-    result.fold(
-      (failure) {
-        AppLogger.d('Nenhum produto em cache ou erro ao carregar');
-      },
-      (products) {
-        if (products.isNotEmpty) {
-          AppLogger.i('✅ ${products.length} produtos carregados do cache');
-          state = state.copyWith(products: products);
-        }
-      },
-    );
-  }
-
-  /// Pesquisar produtos
+  /// Pesquisa produtos (nova pesquisa, reset da paginação)
   Future<void> searchProducts(String query) async {
-    if (query.trim().isEmpty) {
-      state = state.copyWith(products: [], lastQuery: '');
+    if (query.length < 3) {
+      clearSearchResults();
       return;
     }
 
-    AppLogger.i('🔍 Pesquisando: "$query"');
+    // Se é a mesma query e já temos resultados, não pesquisar novamente
+    if (query == state.currentQuery && state.products.isNotEmpty) {
+      return;
+    }
 
-    state = state.copyWith(isLoading: true, error: null);
-
-    final result = await searchProductsUseCase(
-      query: query,
-      limit: 50,
+    state = state.copyWith(
+      isLoading: true,
+      error: null,
+      currentQuery: query,
+      currentOffset: 0,
+      totalCount: 0,
     );
 
-    result.fold(
-      (failure) {
-        AppLogger.e('❌ Erro na pesquisa: ${failure.message}');
-        state = state.copyWith(
-          isLoading: false,
-          error: failure.message,
-        );
-      },
-      (products) {
-        AppLogger.i('✅ ${products.length} produtos encontrados');
-        state = state.copyWith(
-          products: products,
-          isLoading: false,
-          error: null,
-          lastQuery: query,
-        );
-      },
-    );
+    try {
+      AppLogger.i('🔍 A pesquisar produtos: $query');
+
+      final result = await _dataSource.searchProducts(
+        query: query,
+        limit: _pageSize,
+        offset: 0,
+      );
+
+      // Se recebemos menos que o limite na primeira página, esse é o total real
+      final actualTotal = result.products.length < _pageSize 
+          ? result.products.length 
+          : result.totalCount;
+
+      AppLogger.i('✅ ${result.products.length} de $actualTotal produtos');
+
+      state = state.copyWith(
+        products: result.products,
+        isLoading: false,
+        currentOffset: result.products.length,
+        totalCount: actualTotal,
+      );
+    } catch (e) {
+      AppLogger.e('❌ Erro ao pesquisar produtos: $e');
+      state = state.copyWith(
+        isLoading: false,
+        error: e.toString(),
+        products: [],
+        totalCount: 0,
+      );
+    }
   }
 
-  /// Procurar produto por código de barras
+  /// Pesquisa produto por código de barras
   Future<Product?> searchByBarcode(String barcode) async {
-    AppLogger.i('🔍 Procurando por código de barras: $barcode');
+    try {
+      AppLogger.i('🔍 A pesquisar por código de barras: $barcode');
 
-    state = state.copyWith(isLoading: true, error: null);
+      final product = await _dataSource.getProductByBarcode(barcode);
 
-    final result = await getProductByBarcodeUseCase(barcode);
-
-    return result.fold(
-      (failure) {
-        AppLogger.e('❌ Erro ao procurar: ${failure.message}');
-        state = state.copyWith(
-          isLoading: false,
-          error: failure.message,
-        );
-        return null;
-      },
-      (product) {
-        if (product != null) {
-          AppLogger.i('✅ Produto encontrado: ${product.name}');
-          state = state.copyWith(
-            selectedProduct: product,
-            isLoading: false,
-            error: null,
-          );
-        } else {
-          AppLogger.w('⚠️ Produto não encontrado');
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Produto não encontrado',
-          );
-        }
+      if (product != null) {
+        AppLogger.i('✅ Produto encontrado: ${product.name}');
         return product;
-      },
-    );
+      }
+
+      AppLogger.d('⚠️ Produto não encontrado');
+      return null;
+    } catch (e) {
+      AppLogger.e('❌ Erro ao pesquisar por código de barras: $e');
+      return null;
+    }
   }
 
-  /// Procurar produto por referência
-  Future<Product?> searchByReference(String reference) async {
-    AppLogger.i('🔍 Procurando por referência: $reference');
+  /// Carrega mais produtos (paginação)
+  Future<void> loadMoreProducts() async {
+    // Não carregar se já está a carregar ou não há mais
+    if (state.isLoading || state.isLoadingMore || !state.hasMore) {
+      return;
+    }
 
-    state = state.copyWith(isLoading: true, error: null);
+    if (state.currentQuery.isEmpty) {
+      return;
+    }
 
-    final result = await getProductByReferenceUseCase(reference);
+    state = state.copyWith(isLoadingMore: true, error: null);
 
-    return result.fold(
-      (failure) {
-        AppLogger.e('❌ Erro ao procurar: ${failure.message}');
-        state = state.copyWith(
-          isLoading: false,
-          error: failure.message,
-        );
-        return null;
-      },
-      (product) {
-        if (product != null) {
-          AppLogger.i('✅ Produto encontrado: ${product.name}');
-          state = state.copyWith(
-            selectedProduct: product,
-            isLoading: false,
-            error: null,
-          );
-        } else {
-          AppLogger.w('⚠️ Produto não encontrado');
-          state = state.copyWith(
-            isLoading: false,
-            error: 'Produto não encontrado',
-          );
-        }
-        return product;
-      },
-    );
+    try {
+      AppLogger.i('📄 A carregar mais produtos (offset: ${state.currentOffset})');
+
+      final result = await _dataSource.searchProducts(
+        query: state.currentQuery,
+        limit: _pageSize,
+        offset: state.currentOffset,
+      );
+
+      AppLogger.i('✅ +${result.products.length} produtos carregados');
+
+      final newOffset = state.currentOffset + result.products.length;
+      
+      // Se recebemos menos que o limite, não há mais produtos
+      // Atualizar o totalCount para refletir o total real
+      final actualTotal = result.products.length < _pageSize 
+          ? newOffset 
+          : state.totalCount;
+
+      state = state.copyWith(
+        products: [...state.products, ...result.products],
+        isLoadingMore: false,
+        currentOffset: newOffset,
+        totalCount: actualTotal,
+      );
+    } catch (e) {
+      AppLogger.e('❌ Erro ao carregar mais produtos: $e');
+      state = state.copyWith(
+        isLoadingMore: false,
+        error: e.toString(),
+      );
+    }
   }
 
-  /// Selecionar produto
-  void selectProduct(Product product) {
-    AppLogger.i('📌 Selecionando: ${product.name}');
-    state = state.copyWith(selectedProduct: product);
-  }
-
-  /// Desselecionar produto
-  void deselectProduct() {
-    state = state.copyWith(selectedProduct: null);
-  }
-
-  /// Limpar resultados de pesquisa
+  /// Limpa os resultados da pesquisa
   void clearSearchResults() {
-    state = state.copyWith(products: [], lastQuery: '');
-  }
-
-  /// Limpar erro
-  void clearError() {
-    state = state.copyWith(error: null);
-  }
-
-  /// Limpar cache
-  Future<void> clearCache() async {
-    AppLogger.i('🗑️ Limpando cache');
-
-    final result = await clearProductsCacheUseCase();
-
-    result.fold(
-      (failure) {
-        AppLogger.e('❌ Erro ao limpar: ${failure.message}');
-      },
-      (_) {
-        AppLogger.i('✅ Cache limpo');
-        state = state.copyWith(products: []);
-      },
-    );
+    state = const ProductState();
   }
 }
-
-/// Provider do ProductNotifier
-final productProvider = StateNotifierProvider<ProductNotifier, ProductState>((ref) {
-  return ProductNotifier(
-    searchProductsUseCase: ref.watch(searchProductsUseCaseProvider),
-    getProductByBarcodeUseCase: ref.watch(getProductByBarcodeUseCaseProvider),
-    getProductByReferenceUseCase: ref.watch(getProductByReferenceUseCaseProvider),
-    getCachedProductsUseCase: ref.watch(getCachedProductsUseCaseProvider),
-    clearProductsCacheUseCase: ref.watch(clearProductsCacheUseCaseProvider),
-  );
-});
-
-/// Provider conveniente para verificar se tem produtos
-final hasProductsProvider = Provider<bool>((ref) {
-  return ref.watch(productProvider).products.isNotEmpty;
-});
-
-/// Provider conveniente para obter produto selecionado
-final selectedProductProvider = Provider<Product?>((ref) {
-  return ref.watch(productProvider).selectedProduct;
-});

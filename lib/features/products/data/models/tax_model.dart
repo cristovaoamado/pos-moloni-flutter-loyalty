@@ -25,7 +25,7 @@ class TaxModel extends Tax {
       id: json['tax_id'] as int? ?? json['id'] as int? ?? 0,
       value: _parseDouble(json['value']),
       order: json['order'] as int? ?? 0,
-      cumulative: json['cumulative'] as bool? ?? false,
+      cumulative: _parseBool(json['cumulative']),
     );
   }
 
@@ -38,13 +38,23 @@ class TaxModel extends Tax {
     return 0.0;
   }
 
+  /// Helper para converter valores para bool
+  /// A API Moloni retorna 0/1 ou "0"/"1" em vez de true/false
+  static bool _parseBool(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is int) return value != 0;
+    if (value is String) return value == '1' || value.toLowerCase() == 'true';
+    return false;
+  }
+
   /// Converte model para JSON
   Map<String, dynamic> toJson() {
     return {
       'tax_id': id,
       'value': value,
       'order': order,
-      'cumulative': cumulative,
+      'cumulative': cumulative ? 1 : 0,
     };
   }
 

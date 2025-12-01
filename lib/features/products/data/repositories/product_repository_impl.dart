@@ -28,19 +28,19 @@ class ProductRepositoryImpl implements ProductRepository {
     try {
       AppLogger.i('🔍 Pesquisando produtos: "$query"');
 
-      // 1. Tentar buscar na API
-      final remoteProducts = await remoteDataSource.searchProducts(
+      // 1. Tentar buscar na API (retorna ProductSearchResult)
+      final result = await remoteDataSource.searchProducts(
         query: query,
         limit: limit,
         offset: offset,
       );
 
       // 2. Se sucesso, guardar em cache
-      await localDataSource.cacheProducts(remoteProducts);
+      await localDataSource.cacheProducts(result.products);
 
-      final entities = remoteProducts.map((model) => model.toEntity()).toList();
+      final entities = result.products.map((model) => model.toEntity()).toList();
 
-      AppLogger.i('✅ ${entities.length} produtos encontrados');
+      AppLogger.i('✅ ${entities.length} de ${result.totalCount} produtos encontrados');
       return Right(entities);
     } on TokenExpiredException {
       AppLogger.w('⚠️ Token expirado');

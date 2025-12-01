@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pos_moloni_app/app.dart';
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
+import 'package:pos_moloni_app/features/suspended_sales/data/suspended_sales_storage.dart';
 
 void main() async {
   // Garantir inicialização do Flutter
@@ -28,10 +29,9 @@ void main() async {
     await Hive.initFlutter();
     AppLogger.d('Hive inicializado');
 
-    // TO DO: Abrir boxes do Hive quando necessário
-    // await Hive.openBox(ApiConstants.boxProducts);
-    // await Hive.openBox(ApiConstants.boxCategories);
-    // await Hive.openBox(ApiConstants.boxSettings);
+    // Inicializar storage de vendas suspensas (regista adaptadores)
+    await SuspendedSalesStorage.initialize();
+    AppLogger.d('Storage de vendas suspensas inicializado');
 
     // Configurar UI do sistema (status bar)
     SystemChrome.setSystemUIOverlayStyle(

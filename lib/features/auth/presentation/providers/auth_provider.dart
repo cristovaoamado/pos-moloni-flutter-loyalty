@@ -4,6 +4,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:pos_moloni_app/core/errors/failures.dart';
 
 import 'package:pos_moloni_app/core/utils/logger.dart';
+import 'package:pos_moloni_app/core/services/storage_service.dart';
 import 'package:pos_moloni_app/features/auth/data/datasources/auth_local_datasource.dart';
 import 'package:pos_moloni_app/features/auth/data/datasources/auth_remote_datasource.dart';
 import 'package:pos_moloni_app/features/auth/data/repositories/auth_repository_impl.dart';
@@ -20,9 +21,10 @@ final dioProvider = Provider<Dio>((ref) {
   return Dio();
 });
 
-/// Provider do FlutterSecureStorage
+/// Provider do FlutterSecureStorage (usando PlatformStorage para compatibilidade desktop)
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  return const FlutterSecureStorage();
+  // Usa o PlatformStorage que funciona em todas as plataformas
+  return PlatformStorage.instance;
 });
 
 /// Provider do AuthLocalDataSource
@@ -104,14 +106,24 @@ class AuthNotifier extends StateNotifier<AuthState> {
     required this.logoutUseCase,
     required this.refreshTokenUseCase,
     required this.authRepository,
-  }) : super(const AuthState()) {
-    // Verificar auto-login ao inicializar
-    _checkAutoLogin();
-  }
+    required this.storage,
+  }) : super(const AuthState());
+  
   final LoginUseCase loginUseCase;
   final LogoutUseCase logoutUseCase;
   final RefreshTokenUseCase refreshTokenUseCase;
   final AuthRepository authRepository;
+  final FlutterSecureStorage storage;
+
+  /// Chaves para guardar credenciais
+  static const _keyUsername = 'moloni_username';
+  static const _keyPassword = 'moloni_password';
+
+  /// Inicializa e tenta auto-login
+  Future<void> initialize() async {
+    AppLogger.i('🚀 Inicializando autenticação...');
+    await _checkAutoLogin();
+  }
 
   /// Verifica se existe sessão válida (auto-login)
   Future<void> _checkAutoLogin() async {
@@ -119,49 +131,83 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     state = state.copyWith(isLoading: true);
 
+    // Primeiro, verificar se há token válido
     final hasValidTokenResult = await authRepository.hasValidToken();
 
-    hasValidTokenResult.fold(
+    final hasValidToken = hasValidTokenResult.fold(
       (failure) {
         AppLogger.w('❌ Erro ao verificar token: ${failure.message}');
-        state = state.copyWith(isLoading: false, isAuthenticated: false);
+        return false;
       },
-      (hasValidToken) async {
-        if (hasValidToken) {
-          // Obter utilizador guardado
-          final userResult = await authRepository.getCurrentUser();
-
-          userResult.fold(
-            (failure) {
-              AppLogger.w('❌ Erro ao obter utilizador: ${failure.message}');
-              state = state.copyWith(isLoading: false, isAuthenticated: false);
-            },
-            (user) {
-              AppLogger.i('✅ Auto-login bem-sucedido');
-              state = state.copyWith(
-                user: user,
-                isLoading: false,
-                isAuthenticated: true,
-              );
-            },
-          );
-        } else {
-          AppLogger.d('❌ Nenhum token válido encontrado');
-          state = state.copyWith(isLoading: false, isAuthenticated: false);
-        }
-      },
+      (valid) => valid,
     );
+
+    if (hasValidToken) {
+      // Token válido - obter utilizador
+      final userResult = await authRepository.getCurrentUser();
+      
+      userResult.fold(
+        (failure) {
+          AppLogger.w('❌ Erro ao obter utilizador: ${failure.message}');
+          state = state.copyWith(isLoading: false, isAuthenticated: false);
+        },
+        (user) {
+          AppLogger.i('✅ Auto-login bem-sucedido (token válido)');
+          state = state.copyWith(
+            user: user,
+            isLoading: false,
+            isAuthenticated: true,
+          );
+        },
+      );
+      return;
+    }
+
+    // Token inválido ou expirado - tentar com credenciais guardadas
+    AppLogger.d('🔄 Token inválido, tentando credenciais guardadas...');
+    
+    final username = await storage.read(key: _keyUsername);
+    final password = await storage.read(key: _keyPassword);
+
+    if (username != null && username.isNotEmpty && 
+        password != null && password.isNotEmpty) {
+      AppLogger.d('📝 Credenciais encontradas, tentando login...');
+      
+      final success = await _doLogin(username: username, password: password, saveCredentials: false);
+      
+      if (success) {
+        AppLogger.i('✅ Auto-login bem-sucedido (credenciais guardadas)');
+        return;
+      }
+    }
+
+    // Sem credenciais ou login falhou
+    AppLogger.d('❌ Auto-login falhou - requer login manual');
+    state = state.copyWith(isLoading: false, isAuthenticated: false);
   }
 
   /// Fazer login
   Future<bool> login({
     required String username,
     required String password,
+    bool saveCredentials = true,
   }) async {
     AppLogger.i('🔐 Tentando login...');
-
     state = state.copyWith(isLoading: true, error: null);
+    
+    return _doLogin(
+      username: username, 
+      password: password, 
+      saveCredentials: saveCredentials,
+    );
+  }
 
+  /// Executa o login (interno)
+  Future<bool> _doLogin({
+    required String username,
+    required String password,
+    required bool saveCredentials,
+  }) async {
     final result = await loginUseCase(
       username: username,
       password: password,
@@ -179,6 +225,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
       },
       (tokens) async {
         AppLogger.i('✅ Login bem-sucedido');
+
+        // Guardar credenciais se solicitado
+        if (saveCredentials) {
+          await storage.write(key: _keyUsername, value: username);
+          await storage.write(key: _keyPassword, value: password);
+          AppLogger.d('💾 Credenciais guardadas');
+        }
 
         // Obter utilizador
         final userResult = await authRepository.getCurrentUser();
@@ -207,10 +260,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
   }
 
   /// Fazer logout
-  Future<void> logout() async {
+  Future<void> logout({bool clearCredentials = false}) async {
     AppLogger.i('🚪 Fazendo logout...');
 
     state = state.copyWith(isLoading: true);
+
+    // Limpar credenciais se solicitado
+    if (clearCredentials) {
+      await storage.delete(key: _keyUsername);
+      await storage.delete(key: _keyPassword);
+      AppLogger.d('🗑️ Credenciais removidas');
+    }
 
     final result = await logoutUseCase();
 
@@ -255,6 +315,14 @@ class AuthNotifier extends StateNotifier<AuthState> {
   void clearError() {
     state = state.copyWith(error: null);
   }
+
+  /// Verifica se há credenciais guardadas
+  Future<bool> hasStoredCredentials() async {
+    final username = await storage.read(key: _keyUsername);
+    final password = await storage.read(key: _keyPassword);
+    return username != null && username.isNotEmpty && 
+           password != null && password.isNotEmpty;
+  }
 }
 
 /// Provider do AuthNotifier
@@ -264,6 +332,7 @@ final authProvider = StateNotifierProvider<AuthNotifier, AuthState>((ref) {
     logoutUseCase: ref.watch(logoutUseCaseProvider),
     refreshTokenUseCase: ref.watch(refreshTokenUseCaseProvider),
     authRepository: ref.watch(authRepositoryProvider),
+    storage: ref.watch(secureStorageProvider),
   );
 });
 

@@ -53,10 +53,11 @@ class ProductModel extends Product {
       price: _parseDouble(json['price']),
       summary: json['summary'] as String?,
       image: json['image'] as String?,
-      measureUnit: json['measure_unit'] as String?,
+      measureUnit: json['measurement_unit']?['name'] as String? ?? 
+                   json['measure_unit'] as String?,
       categoryId: json['category_id'] as int? ?? 0,
       taxes: taxesList,
-      hasStock: json['has_stock'] as bool? ?? false,
+      hasStock: _parseBool(json['has_stock']),
       stock: _parseDouble(json['stock']),
     );
   }
@@ -68,6 +69,16 @@ class ProductModel extends Product {
     if (value is int) return value.toDouble();
     if (value is String) return double.tryParse(value) ?? 0.0;
     return 0.0;
+  }
+
+  /// Helper para converter valores para bool
+  /// A API Moloni retorna 0/1 ou "0"/"1" em vez de true/false
+  static bool _parseBool(dynamic value) {
+    if (value == null) return false;
+    if (value is bool) return value;
+    if (value is int) return value != 0;
+    if (value is String) return value == '1' || value.toLowerCase() == 'true';
+    return false;
   }
 
   /// Converte model para JSON
@@ -83,7 +94,7 @@ class ProductModel extends Product {
       'measure_unit': measureUnit,
       'category_id': categoryId,
       'taxes': taxes.map((t) => (t as TaxModel).toJson()).toList(),
-      'has_stock': hasStock,
+      'has_stock': hasStock ? 1 : 0,
       'stock': stock,
     };
   }
