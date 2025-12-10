@@ -4,10 +4,23 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   pull_request:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      build_installer:
+        description: 'Build installer (slower)'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  APP_NAME: POS Moloni
+  APP_EXECUTABLE: pos_moloni_app.exe
+  APP_VERSION: 1.0.0
 
 jobs:
   build-windows:
@@ -21,24 +34,194 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: stable
+          cache: true
 
-      - name: Ensure dependencies
+      - name: Get Flutter version
+        run: flutter --version
+
+      - name: Get dependencies
         run: flutter pub get
 
-      - name: Generate code
+      - name: Generate code (build_runner)
         run: flutter pub run build_runner build --delete-conflicting-outputs
 
       - name: Build Windows release
         run: flutter build windows --release
 
-      # Passo opcional para inspecionar a pasta build/windows
-      - name: List build/windows folder
-        run: Get-ChildItem -Recurse build/windows | Select-Object FullName
-        shell: powershell
+      - name: List build output
+        run: |
+          Write-Host "=== Build Output ===" -ForegroundColor Green
+          Get-ChildItem -Recurse build/windows/x64/runner/Release | Select-Object FullName, Length
+        shell: pwsh
 
-      - name: Upload built artifact
+      # ============================================
+      # PORTABLE ZIP (sempre gerado)
+      # ============================================
+      - name: Create portable ZIP
+        run: |
+          $version = "${{ env.APP_VERSION }}"
+          $zipName = "POS-Moloni-Windows-v$version-portable.zip"
+          Compress-Archive -Path "build/windows/x64/runner/Release/*" -DestinationPath $zipName
+          Write-Host "Created: $zipName" -ForegroundColor Green
+        shell: pwsh
+
+      - name: Upload portable ZIP
         uses: actions/upload-artifact@v4
         with:
-          name: windows-build
-          path: build/windows/x64/runner/Release/
+          name: windows-portable
+          path: POS-Moloni-Windows-*.zip
           if-no-files-found: error
+
+      # ============================================
+      # INSTALADOR INNO SETUP
+      # ============================================
+      - name: Create Inno Setup script
+        if: ${{ github.event.inputs.build_installer != 'false' }}
+        run: |
+          @"
+          ; Inno Setup Script for POS Moloni
+          #define MyAppName "${{ env.APP_NAME }}"
+          #define MyAppVersion "${{ env.APP_VERSION }}"
+          #define MyAppPublisher "Loja da Madalena"
+          #define MyAppURL "https://github.com/${{ github.repository }}"
+          #define MyAppExeName "${{ env.APP_EXECUTABLE }}"
+          
+          [Setup]
+          AppId={{A1B2C3D4-E5F6-7890-ABCD-EF1234567890}
+          AppName={#MyAppName}
+          AppVersion={#MyAppVersion}
+          AppPublisher={#MyAppPublisher}
+          AppPublisherURL={#MyAppURL}
+          AppSupportURL={#MyAppURL}
+          AppUpdatesURL={#MyAppURL}
+          DefaultDirName={autopf}\{#MyAppName}
+          DefaultGroupName={#MyAppName}
+          AllowNoIcons=yes
+          LicenseFile=
+          OutputDir=installer_output
+          OutputBaseFilename=POS-Moloni-Windows-v{#MyAppVersion}-setup
+          SetupIconFile=
+          Compression=lzma2/ultra64
+          SolidCompression=yes
+          WizardStyle=modern
+          PrivilegesRequired=admin
+          ArchitecturesAllowed=x64compatible
+          ArchitecturesInstallIn64BitMode=x64compatible
+          
+          [Languages]
+          Name: "portuguese"; MessagesFile: "compiler:Languages\Portuguese.isl"
+          Name: "english"; MessagesFile: "compiler:Default.isl"
+          
+          [Tasks]
+          Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
+          Name: "quicklaunchicon"; Description: "{cm:CreateQuickLaunchIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked; OnlyBelowVersion: 6.1; Check: not IsAdminInstallMode
+          
+          [Files]
+          Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+          
+          [Icons]
+          Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+          Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+          Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+          Name: "{userappdata}\Microsoft\Internet Explorer\Quick Launch\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: quicklaunchicon
+          
+          [Run]
+          Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+          
+          [UninstallDelete]
+          Type: filesandordirs; Name: "{app}"
+          "@ | Out-File -FilePath "setup.iss" -Encoding UTF8
+          Write-Host "Inno Setup script created" -ForegroundColor Green
+        shell: pwsh
+
+      - name: Build installer with Inno Setup
+        if: ${{ github.event.inputs.build_installer != 'false' }}
+        run: |
+          # Inno Setup já vem instalado no windows-latest
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" setup.iss
+          Write-Host "Installer created successfully" -ForegroundColor Green
+        shell: pwsh
+
+      - name: Upload installer
+        if: ${{ github.event.inputs.build_installer != 'false' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: installer_output/*.exe
+          if-no-files-found: warn
+
+      # ============================================
+      # RELEASE (apenas em tags)
+      # ============================================
+      - name: Get tag version
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: tag
+        run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+        shell: bash
+
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          name: "POS Moloni v${{ steps.tag.outputs.VERSION }}"
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          files: |
+            POS-Moloni-Windows-*.zip
+            installer_output/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================
+  # JOB SEPARADO: MSIX (opcional, mais complexo)
+  # ============================================
+  build-msix:
+    runs-on: windows-latest
+    needs: build-windows
+    if: ${{ github.event.inputs.build_installer != 'false' && startsWith(github.ref, 'refs/tags/v') }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Get dependencies
+        run: flutter pub get
+
+      - name: Generate code
+        run: flutter pub run build_runner build --delete-conflicting-outputs
+
+      - name: Create MSIX config
+        run: |
+          @"
+          msix_config:
+            display_name: POS Moloni
+            publisher_display_name: Loja da Madalena
+            identity_name: com.lojadamadalena.posmoloni
+            publisher: CN=Loja da Madalena, O=Loja da Madalena, C=PT
+            msix_version: 1.0.0.0
+            logo_path: assets/icons/app_icon.png
+            capabilities: internetClient
+            languages: pt-PT, en-US
+          "@ | Out-File -FilePath "pubspec_msix.yaml" -Encoding UTF8
+        shell: pwsh
+
+      - name: Add msix dependency
+        run: flutter pub add msix --dev
+
+      - name: Build MSIX
+        run: flutter pub run msix:create
+        continue-on-error: true
+
+      - name: Upload MSIX
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-msix
+          path: build/windows/x64/runner/Release/*.msix
+          if-no-files-found: warn
