@@ -92,6 +92,24 @@ class ApiConstants {
   /// Chave para guardar nome da empresa selecionada
   static const String keyCompanyName = 'company_selected_name';
 
+  /// Chave para guardar NIF da empresa selecionada
+  static const String keyCompanyVat = 'company_selected_vat';
+
+  /// Chave para guardar morada da empresa selecionada
+  static const String keyCompanyAddress = 'company_selected_address';
+
+  /// Chave para guardar código postal da empresa selecionada
+  static const String keyCompanyZipCode = 'company_selected_zip_code';
+
+  /// Chave para guardar cidade da empresa selecionada
+  static const String keyCompanyCity = 'company_selected_city';
+
+  /// Chave para guardar telefone da empresa selecionada
+  static const String keyCompanyPhone = 'company_selected_phone';
+
+  /// Chave para guardar email da empresa selecionada
+  static const String keyCompanyEmail = 'company_selected_email';
+
   /// Chave para guardar margem padrão
   static const String keyDefaultMargin = 'settings_default_margin';
 

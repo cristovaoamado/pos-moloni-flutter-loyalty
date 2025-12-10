@@ -8,7 +8,7 @@ import 'package:pos_moloni_app/features/products/domain/entities/tax.dart';
 
 part 'suspended_sale_model.g.dart';
 
-/// Modelo de venda suspensa para persistência
+/// Modelo de venda suspensa para persistencia
 @HiveType(typeId: 10)
 class SuspendedSaleModel extends HiveObject {
   SuspendedSaleModel({
@@ -80,7 +80,7 @@ class SuspendedSaleModel extends HiveObject {
   @HiveField(11)
   final bool isPersistent;
 
-  /// Converte para SuspendedSale (entidade de domínio)
+  /// Converte para SuspendedSale (entidade de dominio)
   SuspendedSale toEntity({
     List<DocumentTypeOption>? availableDocumentOptions,
   }) {
@@ -101,7 +101,7 @@ class SuspendedSaleModel extends HiveObject {
           (opt) => opt.documentSet.id == documentSetId && opt.documentType.code == documentTypeCode,
         );
       } catch (_) {
-        // Não encontrou
+        // Nao encontrou
         documentOption = null;
       }
     }
@@ -121,7 +121,7 @@ class SuspendedSaleModel extends HiveObject {
   double get total => items.fold(0.0, (sum, item) => sum + item.total);
 }
 
-/// Item de venda suspensa para persistência
+/// Item de venda suspensa para persistencia
 @HiveType(typeId: 11)
 class SuspendedSaleItemModel extends HiveObject {
   SuspendedSaleItemModel({
@@ -141,12 +141,13 @@ class SuspendedSaleItemModel extends HiveObject {
   });
 
   /// Cria a partir de CartItem
+  /// NOTA: Guarda o preco SEM IVA (product.price) para ser consistente com a API
   factory SuspendedSaleItemModel.fromEntity(CartItem item) {
     return SuspendedSaleItemModel(
       productId: item.product.id,
       productName: item.product.name,
       productReference: item.product.reference,
-      productPrice: item.product.price,
+      productPrice: item.product.price, // Preco SEM IVA
       productTaxRate: item.product.totalTaxRate,
       productCategoryId: item.product.categoryId,
       productImage: item.product.image,
@@ -169,7 +170,7 @@ class SuspendedSaleItemModel extends HiveObject {
   final String productReference;
 
   @HiveField(3)
-  final double productPrice;
+  final double productPrice; // Preco SEM IVA
 
   @HiveField(4)
   final double productTaxRate;
@@ -198,10 +199,13 @@ class SuspendedSaleItemModel extends HiveObject {
   @HiveField(12)
   final int productCategoryId;
 
-  /// Preço unitário
+  /// Preco unitario SEM IVA
   double get unitPrice => customPrice ?? productPrice;
 
-  /// Total do item
+  /// Preco unitario COM IVA (para display)
+  double get unitPriceWithTax => unitPrice * (1 + productTaxRate / 100);
+
+  /// Total do item COM IVA
   double get total {
     final subtotal = unitPrice * quantity;
     final discountValue = subtotal * (discount / 100);
@@ -216,7 +220,7 @@ class SuspendedSaleItemModel extends HiveObject {
       id: productId,
       name: productName,
       reference: productReference,
-      price: productPrice,
+      price: productPrice, // Preco SEM IVA
       categoryId: productCategoryId,
       taxes: taxes.map((t) => t.toEntity()).toList(),
       image: productImage,
@@ -233,7 +237,7 @@ class SuspendedSaleItemModel extends HiveObject {
   }
 }
 
-/// Imposto para persistência
+/// Imposto para persistencia
 @HiveType(typeId: 12)
 class SuspendedSaleTaxModel extends HiveObject {
   SuspendedSaleTaxModel({
@@ -241,6 +245,7 @@ class SuspendedSaleTaxModel extends HiveObject {
     required this.value,
     this.order = 0,
     this.cumulative = false,
+    this.name = 'IVA',
   });
 
   factory SuspendedSaleTaxModel.fromEntity(Tax tax) {
@@ -249,6 +254,7 @@ class SuspendedSaleTaxModel extends HiveObject {
       value: tax.value,
       order: tax.order,
       cumulative: tax.cumulative,
+      name: tax.name,
     );
   }
 
@@ -264,8 +270,12 @@ class SuspendedSaleTaxModel extends HiveObject {
   @HiveField(3)
   final bool cumulative;
 
+  @HiveField(4)
+  final String name;
+
   Tax toEntity() => Tax(
-    id: id, 
+    id: id,
+    name: name,
     value: value,
     order: order,
     cumulative: cumulative,

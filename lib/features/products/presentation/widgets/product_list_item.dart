@@ -56,7 +56,7 @@ class ProductListItem extends StatelessWidget {
       return ClipRRect(
         borderRadius: BorderRadius.circular(8),
         child: Image.network(
-          product.imageUrl!,
+          product.image!,
           width: 64,
           height: 64,
           fit: BoxFit.cover,
@@ -146,7 +146,7 @@ class ProductListItem extends StatelessWidget {
       children: [
         // Preço normal
         Text(
-          product.formattedPrice,
+          product.formattedPriceWithTax,
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
                 fontWeight: FontWeight.bold,
                 color: Theme.of(context).colorScheme.primary,
@@ -226,7 +226,7 @@ class CompactProductListItem extends StatelessWidget {
 
               // Preço
               Text(
-                product.formattedPrice,
+                product.formattedPriceWithTax,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       fontWeight: FontWeight.bold,
                       color: Theme.of(context).colorScheme.primary,
@@ -282,7 +282,7 @@ class ProductGridItem extends StatelessWidget {
                   ? ClipRRect(
                       borderRadius: BorderRadius.circular(12),
                       child: Image.network(
-                        product.imageUrl!,
+                        product.image!,
                         fit: BoxFit.cover,
                         errorBuilder: (_, __, ___) => Icon(
                           Icons.shopping_cart_outlined,
@@ -313,7 +313,7 @@ class ProductGridItem extends StatelessWidget {
 
           // Preço
           Text(
-            product.formattedPrice,
+            product.formattedPriceWithTax,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                   color: Theme.of(context).colorScheme.primary,

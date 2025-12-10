@@ -23,6 +23,7 @@ class CreateDocumentRequest {
     required this.payments,
     this.notes,
     this.status = 1, // 1 = Fechado
+    this.globalDiscount = 0, // Desconto global em percentagem (0-100)
   });
 
   final DocumentTypeOption documentTypeOption;
@@ -31,6 +32,8 @@ class CreateDocumentRequest {
   final List<PaymentInfo> payments;
   final String? notes;
   final int status;
+  /// Desconto global em percentagem (0-100)
+  final double globalDiscount;
 }
 
 /// Informação de pagamento
@@ -104,7 +107,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       if (response.statusCode == 200) {
         final data = response.data;
         
-        // Resposta pode ser um Map com customer_id
         if (data is Map && data.containsKey('customer_id')) {
           final customerId = data['customer_id'] as int?;
           if (customerId != null && customerId > 0) {
@@ -113,7 +115,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           }
         }
         
-        // Resposta pode ser uma lista com um cliente
         if (data is List && data.isNotEmpty && data.first is Map) {
           final customer = data.first as Map;
           final customerId = customer['customer_id'] as int?;
@@ -223,14 +224,12 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       if (response.statusCode == 200) {
         final data = response.data;
         
-        // A API pode retornar o customer_id diretamente
         if (data is Map && data.containsKey('customer_id')) {
           final customerId = data['customer_id'] as int;
           AppLogger.i('✅ Consumidor Final criado com ID: $customerId');
           return customerId;
         }
         
-        // Ou pode retornar como int
         if (data is int && data > 0) {
           AppLogger.i('✅ Consumidor Final criado com ID: $data');
           return data;
@@ -246,16 +245,13 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
 
   /// Obtém ou cria o cliente Consumidor Final
   Future<int?> getOrCreateConsumidorFinal() async {
-    // Primeiro tenta encontrar por NIF
     var customerId = await getCustomerIdByVat('999999990');
     
-    // Se não encontrar por NIF, tenta por número/código
     if (customerId == null) {
       AppLogger.d('🔍 A tentar buscar por número 9999...');
       customerId = await getCustomerIdByNumber('9999');
     }
     
-    // Se não encontrar, cria
     if (customerId == null) {
       AppLogger.i('📝 A criar cliente Consumidor Final...');
       customerId = await createConsumidorFinal();
@@ -280,21 +276,49 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         throw const AuthenticationException('Empresa não selecionada');
       }
 
-      // Determinar endpoint baseado no tipo de documento
       final endpoint = request.documentTypeOption.documentType.endpoint;
-      // IMPORTANTE: Adicionar json=true para enviar dados em JSON (muito mais simples!)
+      
+      // ==================== VALIDAÇÃO LIMITE FATURA SIMPLIFICADA ====================
+      // Regra fiscal portuguesa: Faturas Simplificadas têm limite de:
+      // - 100€ para empresas normais
+      // - 1000€ para retalhistas/vendedores ambulantes
+      // Usamos 1000€ assumindo que é um POS de retalho
+      if (endpoint == 'simplifiedInvoices') {
+        // Calcular total estimado dos produtos
+        double totalEstimado = 0;
+        for (final item in request.items) {
+          final itemTotal = item.unitPrice * item.quantity * (1 - item.discount / 100);
+          final taxRate = item.product.taxes.isNotEmpty ? item.product.taxes.first.value : 23.0;
+          totalEstimado += itemTotal * (1 + taxRate / 100);
+        }
+        
+        // Aplicar desconto global se existir
+        if (request.globalDiscount > 0) {
+          totalEstimado = totalEstimado * (1 - request.globalDiscount / 100);
+        }
+        
+        AppLogger.d('💰 Total estimado para Fatura Simplificada: ${totalEstimado.toStringAsFixed(2)} EUR');
+        
+        // Limite de 1000€ para Faturas Simplificadas (retalhistas/vendedores ambulantes)
+        const limiteFS = 1000.0;
+        if (totalEstimado > limiteFS) {
+          throw ServerException(
+            'Faturas Simplificadas têm limite de ${limiteFS.toStringAsFixed(0)}€. '
+            'O total é ${totalEstimado.toStringAsFixed(2)}€. '
+            'Use Fatura ou Fatura-Recibo para valores superiores.'
+          );
+        }
+      }
+      // ==============================================================================
       final url = '$apiUrl/$endpoint/insert/?access_token=$accessToken&json=true&human_errors=true';
 
-      // Data atual no formato YYYY-MM-DD (formato esperado pela API Moloni)
       final now = DateTime.now();
       final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
 
       AppLogger.d('📅 Data do documento: $dateStr');
 
-      // Obter customer_id correcto
       int? customerId = request.customer.id;
       
-      // Se for consumidor final (id = 0), buscar ou criar o cliente
       if (customerId == 0 || request.customer.vat == '999999990') {
         AppLogger.d('🔍 A buscar/criar Consumidor Final...');
         final realCustomerId = await getOrCreateConsumidorFinal();
@@ -306,7 +330,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         }
       }
 
-      // Construir body como JSON (estrutura nativa, muito mais limpa!)
       // Construir produtos
       final products = <Map<String, dynamic>>[];
       for (final item in request.items) {
@@ -317,26 +340,39 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
             'value': tax.value,
           });
         }
+        
+        // DEBUG: Log detalhado dos preços
+        AppLogger.d('📦 Produto: ${item.product.name}');
+        AppLogger.d('   - product.price (sem IVA): ${item.product.price}');
+        AppLogger.d('   - product.priceWithTax: ${item.product.priceWithTax}');
+        AppLogger.d('   - item.unitPrice: ${item.unitPrice}');
+        AppLogger.d('   - item.customPrice: ${item.customPrice}');
+        AppLogger.d('   - item.discount: ${item.discount}%');
+        AppLogger.d('   - taxRate: ${item.taxRate}%');
+        
+        // Usar o preço SEM IVA (como a API Moloni espera)
+        final priceToSend = double.parse(item.unitPrice.toStringAsFixed(4));
+        AppLogger.d('   - priceToSend: $priceToSend');
+        
         products.add({
           'product_id': item.product.id,
           'name': item.product.name,
           'reference': item.product.reference,
           'qty': item.quantity,
-          'price': double.parse(item.unitPrice.toStringAsFixed(4)),
+          'price': priceToSend,
           'discount': double.parse(item.discount.toStringAsFixed(2)),
           'taxes': productTaxes,
         });
       }
 
-      // Construir pagamentos - NOTA: date é OBRIGATÓRIO no payments!
-      // Formato datetime: YYYY-MM-DD HH:MM:SS
+      // Construir pagamentos
       final paymentDateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')} ${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}:${now.second.toString().padLeft(2, '0')}';
       
       final payments = <Map<String, dynamic>>[];
       for (final payment in request.payments) {
         final paymentMap = <String, dynamic>{
           'payment_method_id': payment.methodId,
-          'date': paymentDateStr,  // OBRIGATÓRIO!
+          'date': paymentDateStr,
           'value': double.parse(payment.value.toStringAsFixed(2)),
         };
         if (payment.notes != null && payment.notes!.isNotEmpty) {
@@ -344,6 +380,14 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         }
         payments.add(paymentMap);
       }
+
+      // DEBUG: Log do DocumentTypeOption
+      AppLogger.d('📋 DocumentTypeOption:');
+      AppLogger.d('   - documentSet.id: ${request.documentTypeOption.documentSet.id}');
+      AppLogger.d('   - documentSet.name: ${request.documentTypeOption.documentSet.name}');
+      AppLogger.d('   - documentType.id: ${request.documentTypeOption.documentType.id}');
+      AppLogger.d('   - documentType.code: ${request.documentTypeOption.documentType.code}');
+      AppLogger.d('   - documentType.endpoint: ${request.documentTypeOption.documentType.endpoint}');
 
       final Map<String, dynamic> jsonBody = {
         'company_id': int.tryParse(companyId) ?? companyId,
@@ -356,6 +400,15 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         'payments': payments,
       };
 
+      // ==================== DESCONTO GLOBAL ====================
+      // Usar financial_discount para desconto global (percentagem 0-100)
+      // NOTA: deduction/deduction_id é para outro tipo de dedução fiscal
+      if (request.globalDiscount > 0) {
+        jsonBody['financial_discount'] = double.parse(request.globalDiscount.toStringAsFixed(2));
+        AppLogger.d('💰 Desconto global aplicado (financial_discount): ${request.globalDiscount}%');
+      }
+      // ==========================================================
+
       // Adicionar notas se existirem
       if (request.notes != null && request.notes!.isNotEmpty) {
         jsonBody['notes'] = request.notes;
@@ -367,7 +420,8 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         'customer': request.customer.name,
         'products_count': request.items.length,
         'payments_count': request.payments.length,
-      },);
+        'global_discount': request.globalDiscount,
+      });
 
       AppLogger.d('📤 Request URL: $url');
       AppLogger.d('📅 date value in body: "${jsonBody['date']}"');
@@ -389,96 +443,54 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         final data = response.data;
         
         // A API pode retornar uma lista de erros
-        if (data is List) {
-          // Se a lista contém strings, pode ser erro
-          if (data.isNotEmpty && data.first is String) {
-            // Erro da API - lista contém mensagens de erro
-            final errorMsg = data.join(', ');
-            AppLogger.e('❌ Erro da API: $errorMsg');
-            throw ServerException('Erro da API: $errorMsg');
-          }
-          
-          // Se a lista contém um Map com document_id
-          if (data.isNotEmpty && data.first is Map) {
-            final firstItem = data.first as Map;
-            if (firstItem.containsKey('document_id')) {
-              final documentId = firstItem['document_id'] as int;
-              AppLogger.i('✅ Documento criado com ID (lista): $documentId');
-              return await getDocument(documentId, endpoint);
-            }
-          }
-          
-          // Lista vazia ou formato desconhecido
-          AppLogger.w('⚠️ Resposta inesperada (lista): $data');
-          throw const ServerException('Resposta inválida do servidor');
+        if (data is List && data.isNotEmpty) {
+          final errors = data.map((e) => e.toString()).join(', ');
+          AppLogger.e('❌ Erros da API Moloni: $errors');
+          throw ServerException('Erros: $errors');
         }
-        
-        // A API pode retornar apenas o document_id como int
-        if (data is int) {
-          final documentId = data;
-          AppLogger.i('✅ Documento criado com ID (int): $documentId');
-          return await getDocument(documentId, endpoint);
-        }
-        
-        // A API retorna o document_id do documento criado
+
+        // A API retorna document_id em caso de sucesso
         if (data is Map && data.containsKey('document_id')) {
           final documentId = data['document_id'] as int;
+          AppLogger.i('✅ Documento criado: ID $documentId');
           
-          AppLogger.i('✅ Documento criado com ID: $documentId');
-          
-          // Obter documento completo
+          // Buscar documento completo com getOne
           return await getDocument(documentId, endpoint);
         }
-        
-        // Se a resposta já contém os dados completos (tem 'number' por exemplo)
-        if (data is Map<String, dynamic> && data.containsKey('number')) {
-          return DocumentModel.fromJson(data);
-        }
-        
-        // Tentar converter qualquer Map para documento
-        if (data is Map<String, dynamic>) {
-          // Se tem document_id dentro de outro campo
-          if (data.values.any((v) => v is int)) {
-            for (var entry in data.entries) {
-              if (entry.value is int && entry.key.contains('id')) {
-                AppLogger.i('✅ Documento criado com ID (${entry.key}): ${entry.value}');
-                return await getDocument(entry.value as int, endpoint);
-              }
-            }
-          }
-          return DocumentModel.fromJson(data);
-        }
 
-        AppLogger.w('⚠️ Resposta inesperada: $data');
-        throw ServerException('Resposta inválida do servidor: ${data.runtimeType}');
+        // Se data for um int, é o document_id directamente
+        if (data is int && data > 0) {
+          AppLogger.i('✅ Documento criado: ID $data');
+          return await getDocument(data, endpoint);
+        }
       }
 
-      if (response.data is Map && (response.data as Map).containsKey('error')) {
-        throw ServerException(
-          response.data['error_description'] ?? 'Erro desconhecido',
-          response.statusCode.toString(),
-        );
-      }
-
-      throw ServerException(
-        'Erro ao criar documento',
-        response.statusCode.toString(),
-      );
+      throw const ServerException('Erro ao criar documento: resposta inesperada');
     } on DioException catch (e) {
-      AppLogger.e('Erro ao criar documento', error: e);
-      AppLogger.d('📦 Response data: ${e.response?.data}');
-
+      AppLogger.e('❌ Erro Dio ao criar documento', error: e);
+      AppLogger.d('Response: ${e.response?.data}');
+      
       if (e.response?.statusCode == 401) {
         throw const TokenExpiredException();
       }
-
-      final errorMsg = e.response?.data?['error_description'] ?? 
-                       e.response?.data?.toString() ?? 
-                       'Erro no servidor';
+      
+      // Tentar extrair mensagem de erro
+      String errorMsg = 'Erro no servidor';
+      if (e.response?.data is Map) {
+        final data = e.response!.data as Map;
+        if (data.containsKey('error')) {
+          errorMsg = data['error'].toString();
+        } else if (data.containsKey('message')) {
+          errorMsg = data['message'].toString();
+        }
+      } else if (e.response?.data is List) {
+        errorMsg = (e.response!.data as List).join(', ');
+      }
+      
       throw ServerException(errorMsg, e.response?.statusCode.toString());
     } catch (e) {
-      AppLogger.e('Erro inesperado ao criar documento', error: e);
       if (e is AppException) rethrow;
+      AppLogger.e('❌ Erro ao criar documento', error: e);
       throw ServerException(e.toString());
     }
   }
@@ -495,12 +507,12 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         throw const AuthenticationException('Token de acesso não encontrado');
       }
 
-      final url = '$apiUrl/$endpoint/getOne/?access_token=$accessToken';
+      final url = '$apiUrl/$endpoint/getOne/?access_token=$accessToken&json=true';
 
       AppLogger.moloniApi('$endpoint/getOne', data: {
         'company_id': companyId,
         'document_id': documentId,
-      },);
+      });
 
       final response = await dio.post(
         url,
@@ -509,12 +521,39 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           'document_id': documentId,
         },
         options: Options(
-          contentType: Headers.formUrlEncodedContentType,
+          contentType: Headers.jsonContentType,
         ),
       );
 
       if (response.statusCode == 200 && response.data is Map) {
-        return DocumentModel.fromJson(response.data as Map<String, dynamic>);
+        final data = response.data as Map<String, dynamic>;
+        
+        AppLogger.d('📦 getOne response keys: ${data.keys.toList()}');
+        
+        if (data.containsKey('company')) {
+          AppLogger.d('📦 Company data: ${data['company']}');
+        }
+        
+        if (data.containsKey('entity')) {
+          AppLogger.d('📦 Entity data: ${data['entity']}');
+        }
+        
+        if (data.containsKey('products')) {
+          final products = data['products'] as List?;
+          AppLogger.d('📦 Products count: ${products?.length ?? 0}');
+        }
+        
+        if (data.containsKey('payments')) {
+          final payments = data['payments'] as List?;
+          AppLogger.d('📦 Payments count: ${payments?.length ?? 0}');
+        }
+        
+        // Log do desconto global se existir
+        if (data.containsKey('deduction')) {
+          AppLogger.d('💰 Deduction (desconto global): ${data['deduction']}');
+        }
+        
+        return DocumentModel.fromJson(data);
       }
 
       throw const ServerException('Documento não encontrado');
@@ -545,15 +584,13 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         throw const AuthenticationException('Token de acesso não encontrado');
       }
 
-      // Usar json=true para consistência
       final url = '$apiUrl/$endpoint/getPDFLink/?access_token=$accessToken&json=true';
 
       AppLogger.moloniApi('$endpoint/getPDFLink', data: {
         'company_id': companyId,
         'document_id': documentId,
-      },);
+      });
 
-      // Primeiro obter o link do PDF
       final linkResponse = await dio.post(
         url,
         data: {
@@ -577,27 +614,22 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
 
         AppLogger.d('📄 PDF URL: $pdfUrl');
 
-        // Baixar o PDF
         final pdfResponse = await dio.get<List<int>>(
           pdfUrl,
           options: Options(responseType: ResponseType.bytes),
         );
 
         AppLogger.d('📄 PDF Response status: ${pdfResponse.statusCode}');
-        AppLogger.d('📄 PDF Response headers: ${pdfResponse.headers.map}');
 
         if (pdfResponse.statusCode == 200 && pdfResponse.data != null) {
           final bytes = Uint8List.fromList(pdfResponse.data!);
           AppLogger.i('✅ PDF baixado: ${bytes.length} bytes');
           
-          // Verificar se começa com %PDF (magic bytes do PDF)
           if (bytes.length > 4) {
             final header = String.fromCharCodes(bytes.sublist(0, 4));
             AppLogger.d('📄 PDF header: $header');
             if (!header.startsWith('%PDF')) {
               AppLogger.w('⚠️ Ficheiro não parece ser um PDF válido!');
-              // Log dos primeiros bytes para debug
-              AppLogger.d('📄 Primeiros 100 bytes: ${String.fromCharCodes(bytes.sublist(0, bytes.length > 100 ? 100 : bytes.length))}');
             }
           }
           
@@ -611,7 +643,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       throw const ServerException('Erro ao obter link do PDF');
     } on DioException catch (e) {
       AppLogger.e('Erro ao obter PDF', error: e);
-      AppLogger.d('Response: ${e.response?.data}');
       throw ServerException(
         e.response?.data?.toString() ?? 'Erro ao obter PDF',
         e.response?.statusCode.toString(),
@@ -656,7 +687,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           );
         }).toList();
 
-        // Filtrar apenas Numerário e Multibanco
         final filteredMethods = allMethods.where((m) {
           final nameLower = m.name.toLowerCase();
           return nameLower.contains('numerário') || 
@@ -669,7 +699,6 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
 
         AppLogger.i('✅ ${filteredMethods.length} métodos de pagamento filtrados');
         
-        // Se não encontrou nenhum, usar defaults
         if (filteredMethods.isEmpty) {
           return PaymentMethod.defaultMethods;
         }
@@ -677,11 +706,9 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         return filteredMethods;
       }
 
-      // Retornar métodos padrão se a API falhar
       return PaymentMethod.defaultMethods;
     } catch (e) {
       AppLogger.e('Erro ao obter métodos de pagamento', error: e);
-      // Retornar métodos padrão
       return PaymentMethod.defaultMethods;
     }
   }

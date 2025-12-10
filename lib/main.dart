@@ -29,6 +29,10 @@ void main() async {
     await Hive.initFlutter();
     AppLogger.d('Hive inicializado');
 
+//     // TEMPORÁRIO - Limpar dados antigos incompatíveis (remover depois)
+// await Hive.deleteBoxFromDisk('suspended_sales');
+// AppLogger.d('Dados antigos de vendas suspensas limpos');
+
     // Inicializar storage de vendas suspensas (regista adaptadores)
     await SuspendedSalesStorage.initialize();
     AppLogger.d('Storage de vendas suspensas inicializado');

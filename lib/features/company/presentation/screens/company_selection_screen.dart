@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:pos_moloni_app/core/constants/app_constants.dart';
+import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/company/domain/entities/company.dart';
+import 'package:pos_moloni_app/features/company/presentation/providers/company_data_provider.dart';
 import 'package:pos_moloni_app/features/company/presentation/providers/company_provider.dart';
+import 'package:pos_moloni_app/features/pos/presentation/screens/pos_screen.dart';
 
-/// Tela de Seleção de Empresa
 class CompanySelectionScreen extends ConsumerStatefulWidget {
   const CompanySelectionScreen({super.key});
 
@@ -14,41 +15,59 @@ class CompanySelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen> {
+  bool _isSelecting = false;
+
   @override
   void initState() {
     super.initState();
-
-    // Carregar empresas ao inicializar
+    // Carregar lista de empresas ao iniciar
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(companyProvider.notifier).loadCompanies();
     });
   }
 
-  Future<void> _handleSelectCompany(Company company) async {
-    final success = await ref.read(companyProvider.notifier).selectCompany(company);
+  Future<void> _selectCompany(Company company) async {
+    if (_isSelecting) return;
+    
+    setState(() => _isSelecting = true);
 
-    if (!mounted) return;
+    try {
+      AppLogger.i('A seleccionar empresa: ${company.name}');
+      AppLogger.i('A image empresa: ${company.imageUrl}');
+      AppLogger.i('tem image empresa: ${company.hasImage}');
+      
+      // 1. Seleccionar empresa (guarda na storage)
+      final success = await ref.read(companyProvider.notifier).selectCompany(company);
+      
+      if (!success) {
+        throw Exception('Erro ao seleccionar empresa');
+      }
 
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('✅ Empresa "${company.name}" selecionada'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 1),
-        ),
-      );
+      // 2. Carregar dados da empresa (series, metodos pagamento, etc)
+      await ref.read(companyDataProvider.notifier).loadCompanyData(company);
 
-      // Navegar para PosScreen (substituindo a tela atual)
-      // O app.dart já vai detectar que tem empresa e mostrar PosScreen
-      // Então não precisamos fazer nada - ele vai atualizar automaticamente
-    } else {
-      final error = ref.read(companyProvider).error;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(error ?? 'Erro ao selecionar empresa'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      // 3. Navegar para POS
+      if (mounted) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const PosScreen()),
+          (route) => false,
+        );
+      }
+    } catch (e) {
+      AppLogger.e('Erro ao seleccionar empresa', error: e);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao seleccionar empresa: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSelecting = false);
+      }
     }
   }
 
@@ -58,17 +77,16 @@ class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen>
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Selecione uma Empresa'),
+        title: const Text('Seleccionar Empresa'),
+        automaticallyImplyLeading: false,
       ),
-      body: SafeArea(
-        child: _buildBody(companyState),
-      ),
+      body: _buildBody(companyState),
     );
   }
 
   Widget _buildBody(CompanyState state) {
     // Loading
-    if (state.isLoading && state.companies.isEmpty) {
+    if (state.isLoading) {
       return const Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -82,10 +100,10 @@ class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen>
     }
 
     // Erro
-    if (state.error != null && state.companies.isEmpty) {
+    if (state.error != null) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding * 2),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
@@ -96,21 +114,15 @@ class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen>
               ),
               const SizedBox(height: 16),
               Text(
-                'Erro ao carregar empresas',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
                 state.error!,
-                style: Theme.of(context).textTheme.bodyMedium,
                 textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.error,
+                ),
               ),
               const SizedBox(height: 24),
               ElevatedButton.icon(
-                onPressed: () {
-                  ref.read(companyProvider.notifier).loadCompanies();
-                },
+                onPressed: () => ref.read(companyProvider.notifier).loadCompanies(),
                 icon: const Icon(Icons.refresh),
                 label: const Text('Tentar novamente'),
               ),
@@ -120,30 +132,36 @@ class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen>
       );
     }
 
-    // Lista vazia
+    // Sem empresas
     if (state.companies.isEmpty) {
       return Center(
         child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding * 2),
+          padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
                 Icons.business_outlined,
                 size: 64,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                color: Theme.of(context).colorScheme.outline,
               ),
               const SizedBox(height: 16),
-              Text(
+              const Text(
                 'Nenhuma empresa encontrada',
-                style: Theme.of(context).textTheme.titleLarge,
-                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 18),
               ),
               const SizedBox(height: 8),
               Text(
-                'Contacte o suporte',
-                style: Theme.of(context).textTheme.bodyMedium,
-                textAlign: TextAlign.center,
+                'Verifique as suas credenciais Moloni',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.outline,
+                ),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton.icon(
+                onPressed: () => ref.read(companyProvider.notifier).loadCompanies(),
+                icon: const Icon(Icons.refresh),
+                label: const Text('Recarregar'),
               ),
             ],
           ),
@@ -152,42 +170,52 @@ class _CompanySelectionScreenState extends ConsumerState<CompanySelectionScreen>
     }
 
     // Lista de empresas
-    return ListView.builder(
-      padding: const EdgeInsets.all(AppConstants.defaultPadding),
-      itemCount: state.companies.length,
-      itemBuilder: (context, index) {
-        final company = state.companies[index];
-        return _CompanyCard(
-          company: company,
-          onTap: () => _handleSelectCompany(company),
-        );
-      },
+    return Stack(
+      children: [
+        ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: state.companies.length,
+          itemBuilder: (context, index) {
+            final company = state.companies[index];
+            return _buildCompanyCard(company);
+          },
+        ),
+        
+        // Overlay de loading ao seleccionar
+        if (_isSelecting)
+          Container(
+            color: Colors.black54,
+            child: const Center(
+              child: Card(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 16),
+                      Text('A carregar dados da empresa...'),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
-}
 
-/// Card de empresa
-class _CompanyCard extends StatelessWidget {
-
-  const _CompanyCard({
-    required this.company,
-    required this.onTap,
-  });
-  final Company company;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
+  Widget _buildCompanyCard(Company company) {
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(AppConstants.cardBorderRadius),
+        onTap: _isSelecting ? null : () => _selectCompany(company),
+        borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.all(AppConstants.defaultPadding),
+          padding: const EdgeInsets.all(16),
           child: Row(
             children: [
-              // Ícone
+              // Icon
               Container(
                 width: 56,
                 height: 56,
@@ -197,51 +225,51 @@ class _CompanyCard extends StatelessWidget {
                 ),
                 child: Icon(
                   Icons.business,
+                  size: 28,
                   color: Theme.of(context).colorScheme.primary,
-                  size: 32,
                 ),
               ),
               const SizedBox(width: 16),
-
-              // Informações
+              
+              // Info
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Nome da empresa
                     Text(
                       company.name,
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
-                    const SizedBox(height: 4),
-
-                    // NIF
-                    Text(
-                      'NIF: ${company.vat}',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
-                    const SizedBox(height: 2),
-
-                    // Cidade
-                    Text(
-                      company.city,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                          ),
-                    ),
+                    if (company.vat.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'NIF: ${company.vat}',
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
+                    if (company.city.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        company.city,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(context).colorScheme.outline,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
-
-              // Ícone de seleção
+              
+              // Arrow
               Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                Icons.chevron_right,
+                color: Theme.of(context).colorScheme.outline,
               ),
             ],
           ),

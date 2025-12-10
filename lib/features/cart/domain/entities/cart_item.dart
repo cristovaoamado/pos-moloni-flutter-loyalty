@@ -15,16 +15,19 @@ class CartItem extends Equatable {
   final Product product;
   final double quantity;
   final double discount; // Percentagem de desconto (0-100)
-  final double? customPrice; // Preço customizado (se diferente do produto)
+  final double? customPrice; // Preco customizado (se diferente do produto) - SEM IVA
 
-  /// ID único do item (baseado no produto)
+  /// ID unico do item (baseado no produto)
   int get id => product.id;
 
   /// Nome do produto
   String get name => product.name;
 
-  /// Preço unitário (customizado ou do produto)
+  /// Preco unitario SEM IVA (para enviar a API)
   double get unitPrice => customPrice ?? product.price;
+
+  /// Preco unitario COM IVA (para mostrar ao utilizador)
+  double get unitPriceWithTax => unitPrice * (1 + taxRate / 100);
 
   /// Unidade de medida
   String get measureUnit => product.measureUnit ?? 'Un';
@@ -35,10 +38,10 @@ class CartItem extends Equatable {
   /// Taxa total de IVA
   double get taxRate => product.totalTaxRate;
 
-  /// Subtotal (preço * quantidade, sem desconto)
+  /// Subtotal SEM IVA (preco * quantidade, sem desconto)
   double get subtotal => unitPrice * quantity;
 
-  /// Valor do desconto
+  /// Valor do desconto (sobre o subtotal sem IVA)
   double get discountValue => subtotal * (discount / 100);
 
   /// Subtotal com desconto (sem IVA)
@@ -47,19 +50,22 @@ class CartItem extends Equatable {
   /// Valor do IVA
   double get taxValue => subtotalWithDiscount * (taxRate / 100);
 
-  /// Total da linha (com desconto e IVA)
+  /// Total da linha COM IVA (para mostrar ao utilizador)
   double get total => subtotalWithDiscount + taxValue;
 
-  /// Subtotal formatado
+  /// Subtotal formatado (sem IVA)
   String get formattedSubtotal => '${subtotal.toStringAsFixed(2)} €';
 
   /// Desconto formatado
   String get formattedDiscount => '${discount.toStringAsFixed(0)}%';
 
-  /// Total formatado
+  /// Total formatado (com IVA)
   String get formattedTotal => '${total.toStringAsFixed(2)} €';
 
-  /// Quantidade formatada (até 3 casas decimais, sem zeros à direita)
+  /// Preco unitario com IVA formatado (para mostrar no UI)
+  String get formattedUnitPriceWithTax => '${unitPriceWithTax.toStringAsFixed(2)} €';
+
+  /// Quantidade formatada (ate 3 casas decimais, sem zeros a direita)
   String get formattedQuantity {
     if (quantity == quantity.roundToDouble()) {
       return quantity.toInt().toString();
@@ -74,11 +80,11 @@ class CartItem extends Equatable {
     return formatted;
   }
 
-  /// Verifica se a quantidade é por unidade
+  /// Verifica se a quantidade e por unidade
   bool get isUnitQuantity =>
       measureUnit.toLowerCase() == 'un' || measureUnit.toLowerCase() == 'unidade';
 
-  /// Cria uma cópia com novos valores
+  /// Cria uma copia com novos valores
   CartItem copyWith({
     Product? product,
     double? quantity,

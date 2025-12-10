@@ -12,11 +12,15 @@ class CartState {
     this.items = const [],
     this.isProcessing = false,
     this.error,
+    this.globalDiscount = 0.0,
   });
 
   final List<CartItem> items;
   final bool isProcessing;
   final String? error;
+  
+  /// Desconto global em percentagem (0-100)
+  final double globalDiscount;
 
   /// Número total de itens
   int get itemCount => items.length;
@@ -25,28 +29,63 @@ class CartState {
   double get totalQuantity =>
       items.fold(0.0, (sum, item) => sum + item.quantity);
 
-  /// Subtotal (sem IVA)
-  double get subtotal =>
+  /// Subtotal dos itens (sem IVA, com descontos de item)
+  double get itemsSubtotal =>
       items.fold(0.0, (sum, item) => sum + item.subtotalWithDiscount);
 
-  /// Total de descontos
-  double get totalDiscount =>
+  /// Total de descontos dos itens
+  double get itemsDiscount =>
       items.fold(0.0, (sum, item) => sum + item.discountValue);
 
-  /// Total de IVA
-  double get totalTax => items.fold(0.0, (sum, item) => sum + item.taxValue);
+  /// Total de IVA dos itens (antes do desconto global)
+  double get itemsTax => items.fold(0.0, (sum, item) => sum + item.taxValue);
 
-  /// Total geral (com IVA)
-  double get total => items.fold(0.0, (sum, item) => sum + item.total);
+  /// Total dos itens (com IVA, antes do desconto global)
+  double get itemsTotal => items.fold(0.0, (sum, item) => sum + item.total);
+
+  /// Valor do desconto global
+  double get globalDiscountValue => itemsTotal * (globalDiscount / 100);
+
+  /// Subtotal (sem IVA) - para mostrar no talão
+  double get subtotal {
+    final itemsSubtotalWithTax = itemsSubtotal;
+    final discountOnSubtotal = itemsSubtotalWithTax * (globalDiscount / 100);
+    return itemsSubtotalWithTax - discountOnSubtotal;
+  }
+
+  /// Total de descontos (itens + global)
+  double get totalDiscount => itemsDiscount + globalDiscountValue;
+
+  /// Total de IVA (após desconto global)
+  double get totalTax {
+    final taxBeforeDiscount = itemsTax;
+    final discountOnTax = taxBeforeDiscount * (globalDiscount / 100);
+    return taxBeforeDiscount - discountOnTax;
+  }
+
+  /// Total geral (com IVA e desconto global)
+  double get total => itemsTotal - globalDiscountValue;
+
+  /// Se tem desconto global aplicado
+  bool get hasGlobalDiscount => globalDiscount > 0;
+
+  /// Se tem algum desconto (item ou global)
+  bool get hasAnyDiscount => totalDiscount > 0;
 
   /// Subtotal formatado
-  String get formattedSubtotal => '${subtotal.toStringAsFixed(2)} €';
+  String get formattedSubtotal => '${subtotal.toStringAsFixed(2)} EUR';
 
   /// Total IVA formatado
-  String get formattedTax => '${totalTax.toStringAsFixed(2)} €';
+  String get formattedTax => '${totalTax.toStringAsFixed(2)} EUR';
 
   /// Total formatado
-  String get formattedTotal => '${total.toStringAsFixed(2)} €';
+  String get formattedTotal => '${total.toStringAsFixed(2)} EUR';
+
+  /// Desconto total formatado
+  String get formattedTotalDiscount => '${totalDiscount.toStringAsFixed(2)} EUR';
+
+  /// Desconto global formatado
+  String get formattedGlobalDiscount => '${globalDiscount.toStringAsFixed(1)}%';
 
   /// Verifica se o carrinho está vazio
   bool get isEmpty => items.isEmpty;
@@ -58,11 +97,13 @@ class CartState {
     List<CartItem>? items,
     bool? isProcessing,
     String? error,
+    double? globalDiscount,
   }) {
     return CartState(
       items: items ?? this.items,
       isProcessing: isProcessing ?? this.isProcessing,
       error: error,
+      globalDiscount: globalDiscount ?? this.globalDiscount,
     );
   }
 }
@@ -191,6 +232,19 @@ class CartNotifier extends StateNotifier<CartState> {
   void clearCart() {
     AppLogger.i('🗑️ Limpando carrinho');
     state = const CartState();
+  }
+
+  /// Aplicar desconto global ao carrinho
+  void applyGlobalDiscount(double discount) {
+    final clampedDiscount = discount.clamp(0.0, 100.0);
+    AppLogger.i('💰 Aplicando desconto global: $clampedDiscount%');
+    state = state.copyWith(globalDiscount: clampedDiscount);
+  }
+
+  /// Remover desconto global
+  void removeGlobalDiscount() {
+    AppLogger.i('❌ Removendo desconto global');
+    state = state.copyWith(globalDiscount: 0.0);
   }
 
   /// Definir estado de processamento

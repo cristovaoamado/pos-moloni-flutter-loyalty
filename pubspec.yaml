@@ -35,6 +35,9 @@ dependencies:
   # Impressora
   print_bluetooth_thermal: ^1.1.1
   
+  # Balança
+  flutter_libserialport: ^0.4.0
+  
   # Permissões
   permission_handler: ^11.0.1
   
@@ -50,6 +53,7 @@ dependencies:
   printing: ^5.14.2
   pdf: ^3.11.3
   path_provider: ^2.1.5
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
@@ -71,7 +75,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   
-  # assets:
+  assets:
+    - assets/fonts/Roboto-Regular.ttf
+    - assets/fonts/Roboto-Bold.ttf
   #   - assets/images/
   #   - assets/icons/
 

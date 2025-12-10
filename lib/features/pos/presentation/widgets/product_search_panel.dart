@@ -10,9 +10,12 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
   const ProductSearchPanel({
     super.key,
     required this.onProductTap,
+    this.onSearchFocusLost,
   });
 
   final Function(Product) onProductTap;
+  /// Callback quando o campo de pesquisa perde o foco
+  final VoidCallback? onSearchFocusLost;
 
   @override
   ConsumerState<ProductSearchPanel> createState() => _ProductSearchPanelState();
@@ -21,17 +24,36 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
 class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
+  bool _isInitialized = false;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _searchFocusNode.requestFocus();
-    });
+    // Escutar mudanças de foco
+    _searchFocusNode.addListener(_onSearchFocusChange);
+  }
+  
+  void _onSearchFocusChange() {
+    // Quando o campo de pesquisa perde o foco, notificar o pai
+    if (!_searchFocusNode.hasFocus) {
+      widget.onSearchFocusLost?.call();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Aguardar varios frames para garantir layout completo
+    if (!_isInitialized) {
+      _isInitialized = true;
+      // Não focar automaticamente no campo de pesquisa para não tirar o foco do scanner
+      // O utilizador pode clicar no campo quando quiser pesquisar
+    }
   }
 
   @override
   void dispose() {
+    _searchFocusNode.removeListener(_onSearchFocusChange);
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -86,15 +108,150 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
               ? const Center(child: CircularProgressIndicator())
               : productState.error != null
                   ? _buildErrorState(productState.error!)
-                  : productState.products.isEmpty
-                      ? _buildEmptyState()
-                      : _buildProductGrid(productState),
+                  : productState.hasScannedProduct
+                      ? _buildScannedProductView(productState.scannedProduct!)
+                      : productState.products.isEmpty
+                          ? _buildEmptyState()
+                          : _buildProductGrid(productState),
         ),
 
-        // Barra de paginação (se houver resultados)
-        if (productState.products.isNotEmpty)
+        // Barra de paginação (se houver resultados na grid, não para produto scaneado)
+        if (productState.products.isNotEmpty && !productState.hasScannedProduct)
           _buildPaginationBar(productState),
       ],
+    );
+  }
+
+  /// Visualização destacada do produto scaneado
+  Widget _buildScannedProductView(Product product) {
+    return Center(
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 700),
+        margin: const EdgeInsets.all(24),
+        child: Card(
+          elevation: 8,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: InkWell(
+            onTap: () => widget.onProductTap(product),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                // Lado esquerdo: Imagem
+                SizedBox(
+                  width: 250,
+                  height: 250,
+                  child: product.hasImage
+                      ? Image.network(
+                          product.imageUrl!,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _buildScannedProductPlaceholder(),
+                        )
+                      : _buildScannedProductPlaceholder(),
+                ),
+                
+                // Lado direito: Info e acções
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Indicador de sucesso
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: BoxDecoration(
+                                color: Colors.green.withOpacity(0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check_circle,
+                                color: Colors.green,
+                                size: 24,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Text(
+                              'Adicionado ao carrinho',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.green[700],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 20),
+                        
+                        // Nome do produto
+                        Text(
+                          product.name,
+                          style: const TextStyle(
+                            fontSize: 22,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 16),
+                        
+                        // Preço grande
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).colorScheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            product.formattedPriceWithTax,
+                            style: TextStyle(
+                              fontSize: 28,
+                              fontWeight: FontWeight.bold,
+                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 24),
+                        
+                        // Botão para adicionar mais
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => widget.onProductTap(product),
+                            icon: const Icon(Icons.add_shopping_cart),
+                            label: const Text('Adicionar mais'),
+                            style: OutlinedButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildScannedProductPlaceholder() {
+    return Container(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: Center(
+        child: Icon(
+          Icons.inventory_2,
+          size: 80,
+          color: Theme.of(context).colorScheme.outline,
+        ),
+      ),
     );
   }
 
@@ -264,7 +421,7 @@ class _ProductCard extends ConsumerWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withValues(alpha: 0.7)],
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
                   ),
                 ),
                 child: Column(
@@ -286,7 +443,7 @@ class _ProductCard extends ConsumerWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          product.formattedPrice,
+                          product.formattedPriceWithTax,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
@@ -296,7 +453,7 @@ class _ProductCard extends ConsumerWidget {
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.2),
+                            color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -323,7 +480,7 @@ class _ProductCard extends ConsumerWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.3),
+                        color: Colors.black.withOpacity(0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),

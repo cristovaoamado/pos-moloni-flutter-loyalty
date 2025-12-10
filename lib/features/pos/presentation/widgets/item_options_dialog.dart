@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:pos_moloni_app/features/cart/domain/entities/cart_item.dart';
+import 'package:pos_moloni_app/features/scale/services/scale_service.dart';
 
 /// Diálogo de opções do item com tabs (Quantidade, Desconto, Preço)
 class ItemOptionsDialog extends StatefulWidget {
@@ -39,7 +40,18 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
 
   late double _currentQty;
   late double _currentDiscount;
-  late double _currentPrice;
+  late double _currentPriceWithTax; // Preço COM IVA (PVP) - o que o utilizador vê/edita
+
+  /// Taxa de IVA do produto
+  double get _taxRate => widget.item.taxRate;
+
+  /// Converte preço COM IVA para preço SEM IVA
+  double get _priceWithoutTax => _currentPriceWithTax / (1 + _taxRate / 100);
+
+  // Estado da balança
+  final ScaleService _scaleService = ScaleService();
+  bool _isReadingScale = false;
+  String? _scaleError;
 
   @override
   void initState() {
@@ -48,13 +60,16 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
 
     _currentQty = widget.item.quantity;
     _currentDiscount = widget.item.discount;
-    _currentPrice = widget.item.unitPrice;
+    _currentPriceWithTax = widget.item.unitPriceWithTax; // Preço COM IVA (PVP)
 
     _qtyController = TextEditingController(text: _formatNumber(_currentQty));
     _discountController = TextEditingController(
       text: _currentDiscount > 0 ? _currentDiscount.toStringAsFixed(0) : '',
     );
-    _priceController = TextEditingController(text: _currentPrice.toStringAsFixed(2));
+    _priceController = TextEditingController(text: _currentPriceWithTax.toStringAsFixed(2));
+
+    // Carregar configuração da balança
+    _scaleService.loadConfig();
 
     // Selecionar texto e dar focus após o frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -104,7 +119,58 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
     _qtyFocusNode.dispose();
     _discountFocusNode.dispose();
     _priceFocusNode.dispose();
+    _scaleService.dispose();
     super.dispose();
+  }
+
+  /// Lê o peso da balança
+  Future<void> _readFromScale() async {
+    setState(() {
+      _isReadingScale = true;
+      _scaleError = null;
+    });
+
+    try {
+      final reading = await _scaleService.readWeight();
+      
+      if (reading != null) {
+        setState(() {
+          _currentQty = reading.weight;
+          _qtyController.text = _formatNumber(_currentQty);
+          _isReadingScale = false;
+        });
+        
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.scale, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text('Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}'),
+                  if (!reading.isStable) ...[
+                    const SizedBox(width: 8),
+                    const Text('(instável)', style: TextStyle(fontStyle: FontStyle.italic)),
+                  ],
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() {
+          _isReadingScale = false;
+          _scaleError = 'Não foi possível ler o peso';
+        });
+      }
+    } catch (e) {
+      setState(() {
+        _isReadingScale = false;
+        _scaleError = 'Erro: $e';
+      });
+    }
   }
 
   String _formatNumber(double value) {
@@ -179,7 +245,8 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   void _confirm() {
     widget.onQuantityChanged(_currentQty);
     widget.onDiscountChanged(_currentDiscount);
-    widget.onPriceChanged(_currentPrice);
+    // Enviar preço SEM IVA (a API Moloni espera preço sem IVA)
+    widget.onPriceChanged(_priceWithoutTax);
     Navigator.pop(context);
   }
 
@@ -302,10 +369,20 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildQuantityTab(BuildContext context) {
-    return Padding(
+    // Verificar se a unidade é pesável (kg, g, etc.)
+    final unit = widget.item.measureUnit.toLowerCase();
+    final isWeighable = unit.contains('kg') || 
+                        unit.contains('g') || 
+                        unit == 'quilograma' || 
+                        unit == 'quilogramas' ||
+                        unit == 'grama' ||
+                        unit == 'gramas';
+
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -358,9 +435,42 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
+          
+          // Botão de leitura da balança (só para produtos pesáveis)
+          if (isWeighable) ...[
+            ElevatedButton.icon(
+              onPressed: _isReadingScale ? null : _readFromScale,
+              icon: _isReadingScale
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.scale, size: 20),
+              label: Text(_isReadingScale ? 'A ler...' : 'Ler da Balança'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.teal,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+            ),
+            if (_scaleError != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _scaleError!,
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ],
+            const SizedBox(height: 8),
+          ],
+          
+          const SizedBox(height: 8),
           Text(
-            'Total: ${(_currentQty * _currentPrice * (1 - _currentDiscount / 100) * (1 + widget.item.taxRate / 100)).toStringAsFixed(2)} €',
+            'Total: ${(_currentQty * _currentPriceWithTax * (1 - _currentDiscount / 100)).toStringAsFixed(2)} €',
             style: TextStyle(
               fontSize: 18,
               color: Theme.of(context).colorScheme.primary,
@@ -373,10 +483,11 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildDiscountTab(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           // Input + Label % (fora da caixa)
           Row(
@@ -419,36 +530,34 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
           ),
           const SizedBox(height: 16),
           // Botões rápidos + botão limpar na mesma linha
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+          Wrap(
+            alignment: WrapAlignment.center,
+            spacing: 6,
+            runSpacing: 6,
             children: [
               ...[5, 10, 15, 20].map((d) {
                 final isSelected = _currentDiscount == d.toDouble();
-                return Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 3),
-                  child: ElevatedButton(
-                    onPressed: () {
-                      setState(() {
-                        _currentDiscount = d.toDouble();
-                        _discountController.text = d.toString();
-                      });
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: isSelected ? Colors.orange.shade700 : Colors.orange,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                      minimumSize: const Size(50, 40),
-                      side: isSelected ? const BorderSide(color: Colors.white, width: 2) : null,
-                    ),
-                    child: Text(
-                      '$d%',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                    ),
+                return ElevatedButton(
+                  onPressed: () {
+                    setState(() {
+                      _currentDiscount = d.toDouble();
+                      _discountController.text = d.toString();
+                    });
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: isSelected ? Colors.orange.shade700 : Colors.orange,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    minimumSize: const Size(50, 40),
+                    side: isSelected ? const BorderSide(color: Colors.white, width: 2) : null,
+                  ),
+                  child: Text(
+                    '$d%',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 );
               }),
-              if (_currentDiscount > 0) ...[
-                const SizedBox(width: 8),
+              if (_currentDiscount > 0)
                 IconButton(
                   onPressed: () {
                     setState(() {
@@ -463,13 +572,12 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                     backgroundColor: Colors.red.shade50,
                   ),
                 ),
-              ],
             ],
           ),
           const SizedBox(height: 16),
           if (_currentDiscount > 0)
             Text(
-              'Desconto: -${(_currentQty * _currentPrice * _currentDiscount / 100).toStringAsFixed(2)} €',
+              'Desconto: -${(_currentQty * _currentPriceWithTax * _currentDiscount / 100).toStringAsFixed(2)} €',
               style: const TextStyle(fontSize: 16, color: Colors.orange, fontWeight: FontWeight.w500),
             ),
         ],
@@ -478,17 +586,18 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildPriceTab(BuildContext context) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Preço original: ${widget.item.product.price.toStringAsFixed(2)} €',
+            'Preço original: ${widget.item.product.priceWithTax.toStringAsFixed(2)} €',
             style: TextStyle(color: Theme.of(context).colorScheme.outline),
           ),
           const SizedBox(height: 20),
-          // Input + Label € (fora da caixa)
+          // Input + Label € (fora da caixa) - Preço COM IVA (PVP)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -511,7 +620,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                   onChanged: (value) {
                     final price = double.tryParse(value);
                     if (price != null && price >= 0) {
-                      setState(() => _currentPrice = price);
+                      setState(() => _currentPriceWithTax = price);
                     }
                   },
                 ),
@@ -524,12 +633,12 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             ],
           ),
           const SizedBox(height: 20),
-          if (_currentPrice != widget.item.product.price)
+          if (_currentPriceWithTax != widget.item.product.priceWithTax)
             TextButton.icon(
               onPressed: () {
                 setState(() {
-                  _currentPrice = widget.item.product.price;
-                  _priceController.text = _currentPrice.toStringAsFixed(2);
+                  _currentPriceWithTax = widget.item.product.priceWithTax;
+                  _priceController.text = _currentPriceWithTax.toStringAsFixed(2);
                 });
               },
               icon: const Icon(Icons.restore, size: 18),

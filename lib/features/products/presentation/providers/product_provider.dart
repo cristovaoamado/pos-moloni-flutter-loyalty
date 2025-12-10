@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:pos_moloni_app/features/products/data/datasources/product_remote_datasource.dart';
+import 'package:pos_moloni_app/features/products/data/models/product_model.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
 
 /// Estado dos produtos com suporte a paginação
@@ -16,6 +17,7 @@ class ProductState {
     this.currentQuery = '',
     this.currentOffset = 0,
     this.totalCount = 0,
+    this.scannedProduct,
   });
 
   final List<Product> products;
@@ -25,6 +27,9 @@ class ProductState {
   final String currentQuery;
   final int currentOffset;
   final int totalCount;
+  
+  /// Produto único lido pelo scanner (para mostrar em destaque)
+  final Product? scannedProduct;
 
   bool get hasMore => currentOffset < totalCount;
   
@@ -33,6 +38,9 @@ class ProductState {
   
   /// Total de páginas
   int get totalPages => (totalCount / 50).ceil();
+  
+  /// Se tem um produto scaneado para mostrar em destaque
+  bool get hasScannedProduct => scannedProduct != null;
 
   ProductState copyWith({
     List<Product>? products,
@@ -42,6 +50,8 @@ class ProductState {
     String? currentQuery,
     int? currentOffset,
     int? totalCount,
+    Product? scannedProduct,
+    bool clearScannedProduct = false,
   }) {
     return ProductState(
       products: products ?? this.products,
@@ -51,6 +61,7 @@ class ProductState {
       currentQuery: currentQuery ?? this.currentQuery,
       currentOffset: currentOffset ?? this.currentOffset,
       totalCount: totalCount ?? this.totalCount,
+      scannedProduct: clearScannedProduct ? null : (scannedProduct ?? this.scannedProduct),
     );
   }
 }
@@ -93,6 +104,7 @@ class ProductNotifier extends StateNotifier<ProductState> {
       currentQuery: query,
       currentOffset: 0,
       totalCount: 0,
+      clearScannedProduct: true, // Limpar produto scaneado ao pesquisar
     );
 
     try {
@@ -198,5 +210,44 @@ class ProductNotifier extends StateNotifier<ProductState> {
   /// Limpa os resultados da pesquisa
   void clearSearchResults() {
     state = const ProductState();
+  }
+  
+  /// Limpa apenas o produto scaneado (mantém os resultados da pesquisa)
+  void clearScannedProduct() {
+    state = state.copyWith(clearScannedProduct: true);
+  }
+
+  /// Define um produto único scaneado (para mostrar em destaque)
+  void setScannedProduct(ProductModel product) {
+    AppLogger.i('📦 Produto scaneado: ${product.name}');
+    
+    state = state.copyWith(
+      scannedProduct: product.toEntity(),
+      // Limpar resultados de pesquisa anteriores
+      products: [],
+      currentQuery: '',
+      currentOffset: 0,
+      totalCount: 0,
+    );
+  }
+
+  /// Define resultados de pesquisa por barcode (múltiplos produtos)
+  /// Usado quando o scanner encontra múltiplos produtos
+  void setBarcodeResults(List<ProductModel> products) {
+    AppLogger.i('📦 A definir ${products.length} produtos do barcode na grid');
+    
+    // Converter ProductModel para Product
+    final productList = products.map((p) => p.toEntity()).toList();
+    
+    state = state.copyWith(
+      products: productList,
+      isLoading: false,
+      isLoadingMore: false,
+      error: null,
+      currentQuery: '[barcode]', // Indicador especial
+      currentOffset: productList.length,
+      totalCount: productList.length,
+      clearScannedProduct: true, // Limpar produto scaneado anterior
+    );
   }
 }

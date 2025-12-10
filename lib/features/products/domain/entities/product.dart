@@ -19,6 +19,7 @@ class Product extends Equatable {
     this.hasStock = false,
     this.stock = 0,
   });
+  
   final int id;
   final String name;
   final String reference;
@@ -38,18 +39,21 @@ class Product extends Equatable {
     return 'https://www.moloni.pt/_imagens/?img=$image';
   }
 
-  /// Preço formatado
+  /// Preco formatado (sem IVA)
   String get formattedPrice => '${price.toStringAsFixed(2)} €';
 
-  /// IVA total do produto
+  /// IVA total do produto (soma de todas as taxas)
   double get totalTaxRate {
     return taxes.fold(0.0, (sum, tax) => sum + tax.value);
   }
 
-  /// Preço com IVA
+  /// Preco com IVA incluido
   double get priceWithTax {
     return price * (1 + totalTaxRate / 100);
   }
+
+  /// Preco com IVA formatado
+  String get formattedPriceWithTax => '${priceWithTax.toStringAsFixed(2)} €';
 
   /// Verifica se tem imagem
   bool get hasImage => image != null && image!.isNotEmpty;

@@ -220,6 +220,14 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
 
   @override
   Future<ProductModel?> getProductByBarcode(String barcode) async {
+    // Usa o novo método que retorna lista e pega o primeiro
+    final products = await searchByBarcode(barcode);
+    return products.isNotEmpty ? products.first : null;
+  }
+
+  /// Pesquisa produtos por código de barras (EAN)
+  /// Retorna lista pois pode haver múltiplos produtos com o mesmo EAN
+  Future<List<ProductModel>> searchByBarcode(String barcode) async {
     try {
       final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
           ApiConstants.defaultMoloniApiUrl;
@@ -230,9 +238,12 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
         throw const AuthenticationException('Autenticação inválida');
       }
 
-      final url = '$apiUrl/${ApiConstants.productsGetByBarcode}/?access_token=$accessToken';
+      final url = '$apiUrl/products/getByEAN/?access_token=$accessToken';
 
-      AppLogger.moloniApi('products/getByBarcode', data: {'ean': barcode});
+      AppLogger.moloniApi('products/getByEAN', data: {
+        'company_id': companyId,
+        'ean': barcode,
+      });
 
       final response = await dio.post(
         url,
@@ -245,37 +256,46 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
         ),
       );
 
+      AppLogger.d('📦 getByEAN Response status: ${response.statusCode}');
+      AppLogger.d('📦 getByEAN Response type: ${response.data.runtimeType}');
+
       if (response.statusCode == 200) {
-        if (response.data is Map && (response.data as Map).isNotEmpty) {
-          if ((response.data as Map).containsKey('error')) {
-            AppLogger.d('Produto não encontrado');
-            return null;
-          }
+        // A API pode retornar uma lista ou um único objeto
+        if (response.data is List) {
+          final products = (response.data as List)
+              .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
+              .toList();
+          AppLogger.i('✅ ${products.length} produto(s) encontrado(s) por EAN: $barcode');
+          return products;
+        } else if (response.data is Map && !(response.data as Map).containsKey('error')) {
           final product = ProductModel.fromJson(response.data as Map<String, dynamic>);
-          AppLogger.i('✅ Produto encontrado por código de barras');
-          return product;
+          AppLogger.i('✅ 1 produto encontrado por EAN: $barcode');
+          return [product];
         }
-        // Lista vazia ou resposta sem dados
-        return null;
+        
+        // Lista vazia ou erro
+        AppLogger.d('📦 Nenhum produto encontrado para EAN: $barcode');
+        return [];
       }
 
-      return null;
+      return [];
     } on DioException catch (e) {
+      AppLogger.e('Erro ao pesquisar por EAN', error: e);
+      
       if (e.response?.statusCode == 404) {
-        return null;
+        return [];
       }
 
       if (e.response?.statusCode == 401) {
         throw const TokenExpiredException();
       }
 
-      throw ServerException(
-        e.response?.data?.toString() ?? 'Erro no servidor',
-        e.response?.statusCode.toString(),
-      );
+      // Para outros erros, retornar lista vazia em vez de falhar
+      return [];
     } catch (e) {
+      AppLogger.e('Erro inesperado ao pesquisar por EAN', error: e);
       if (e is AppException) rethrow;
-      throw ServerException(e.toString());
+      return [];
     }
   }
 

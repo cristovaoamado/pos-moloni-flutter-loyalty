@@ -121,14 +121,19 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Inicializa e tenta auto-login
   Future<void> initialize() async {
-    AppLogger.i('🚀 Inicializando autenticação...');
+    AppLogger.i('Inicializando autenticacao...');
+    // Usar Future.microtask para garantir que o provider esta pronto
+    await Future.microtask(() {});
     await _checkAutoLogin();
   }
 
   /// Verifica se existe sessão válida (auto-login)
   Future<void> _checkAutoLogin() async {
-    AppLogger.i('🔍 Verificando auto-login...');
+    AppLogger.i('Verificando auto-login...');
 
+    // Verificar se o notifier ainda esta montado antes de actualizar estado
+    if (!mounted) return;
+    
     state = state.copyWith(isLoading: true);
 
     // Primeiro, verificar se há token válido
@@ -148,42 +153,48 @@ class AuthNotifier extends StateNotifier<AuthState> {
       
       userResult.fold(
         (failure) {
-          AppLogger.w('❌ Erro ao obter utilizador: ${failure.message}');
-          state = state.copyWith(isLoading: false, isAuthenticated: false);
+          AppLogger.w('Erro ao obter utilizador: ${failure.message}');
+          if (mounted) {
+            state = state.copyWith(isLoading: false, isAuthenticated: false);
+          }
         },
         (user) {
-          AppLogger.i('✅ Auto-login bem-sucedido (token válido)');
-          state = state.copyWith(
-            user: user,
-            isLoading: false,
-            isAuthenticated: true,
-          );
+          AppLogger.i('Auto-login bem-sucedido (token valido)');
+          if (mounted) {
+            state = state.copyWith(
+              user: user,
+              isLoading: false,
+              isAuthenticated: true,
+            );
+          }
         },
       );
       return;
     }
 
     // Token inválido ou expirado - tentar com credenciais guardadas
-    AppLogger.d('🔄 Token inválido, tentando credenciais guardadas...');
+    AppLogger.d('Token invalido, tentando credenciais guardadas...');
     
     final username = await storage.read(key: _keyUsername);
     final password = await storage.read(key: _keyPassword);
 
     if (username != null && username.isNotEmpty && 
         password != null && password.isNotEmpty) {
-      AppLogger.d('📝 Credenciais encontradas, tentando login...');
+      AppLogger.d('Credenciais encontradas, tentando login...');
       
       final success = await _doLogin(username: username, password: password, saveCredentials: false);
       
       if (success) {
-        AppLogger.i('✅ Auto-login bem-sucedido (credenciais guardadas)');
+        AppLogger.i('Auto-login bem-sucedido (credenciais guardadas)');
         return;
       }
     }
 
     // Sem credenciais ou login falhou
-    AppLogger.d('❌ Auto-login falhou - requer login manual');
-    state = state.copyWith(isLoading: false, isAuthenticated: false);
+    AppLogger.d('Auto-login falhou - requer login manual');
+    if (mounted) {
+      state = state.copyWith(isLoading: false, isAuthenticated: false);
+    }
   }
 
   /// Fazer login

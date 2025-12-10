@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
@@ -12,14 +11,106 @@ import 'package:pos_moloni_app/features/checkout/domain/entities/document.dart';
 import 'package:pos_moloni_app/features/cart/domain/entities/cart_item.dart';
 import 'package:pos_moloni_app/features/customers/domain/entities/customer.dart';
 
-/// Serviço de impressão multiplataforma (foco em Windows)
+/// Serviço de impressão multiplataforma
 class PrintService {
-  /// Imprime um documento PDF
-  static Future<bool> printPdf(Uint8List pdfBytes, {String? documentName}) async {
-    try {
-      AppLogger.i('🖨️ Iniciando impressão...');
+  // Cache de impressoras
+  static List<Printer> _cachedPrinters = [];
+  static DateTime? _lastPrinterRefresh;
+  static const _printerCacheDuration = Duration(minutes: 5);
 
-      // Usar o package printing para impressão multiplataforma
+  /// Lista impressoras disponíveis (com cache)
+  static Future<List<Printer>> getAvailablePrinters({bool forceRefresh = false}) async {
+    final now = DateTime.now();
+    
+    if (!forceRefresh && 
+        _cachedPrinters.isNotEmpty && 
+        _lastPrinterRefresh != null &&
+        now.difference(_lastPrinterRefresh!) < _printerCacheDuration) {
+      return _cachedPrinters;
+    }
+
+    try {
+      _cachedPrinters = await Printing.listPrinters();
+      _lastPrinterRefresh = now;
+      AppLogger.d('🖨️ ${_cachedPrinters.length} impressoras encontradas');
+      for (final p in _cachedPrinters) {
+        AppLogger.d('   - ${p.name} (${p.url})');
+      }
+      return _cachedPrinters;
+    } catch (e) {
+      AppLogger.e('Erro ao listar impressoras', error: e);
+      return [];
+    }
+  }
+
+  /// Obtém impressora por nome
+  static Future<Printer?> getPrinterByName(String name) async {
+    final printers = await getAvailablePrinters();
+    try {
+      return printers.firstWhere((p) => p.name == name);
+    } catch (e) {
+      // Tentar match parcial
+      try {
+        return printers.firstWhere(
+          (p) => p.name.toLowerCase().contains(name.toLowerCase()) ||
+                 name.toLowerCase().contains(p.name.toLowerCase())
+        );
+      } catch (e) {
+        return null;
+      }
+    }
+  }
+
+  /// Imprime PDF directamente para uma impressora específica (SILENCIOSO)
+  /// Este é o método principal para impressão sem diálogo
+  static Future<bool> printDirectToConfiguredPrinter(
+    Uint8List pdfBytes,
+    String printerName, {
+    String? documentName,
+  }) async {
+    try {
+      AppLogger.i('🖨️ Procurando impressora: $printerName');
+      
+      // Obter impressora
+      final printer = await getPrinterByName(printerName);
+      
+      if (printer == null) {
+        AppLogger.e('❌ Impressora não encontrada: $printerName');
+        final available = _cachedPrinters.map((p) => p.name).join(', ');
+        AppLogger.d('   Disponíveis: $available');
+        return false;
+      }
+
+      AppLogger.i('🖨️ Imprimindo silenciosamente em: ${printer.name}');
+
+      // Impressão directa sem diálogo
+      final result = await Printing.directPrintPdf(
+        printer: printer,
+        onLayout: (format) async => pdfBytes,
+        name: documentName ?? 'Documento',
+      );
+
+      if (result) {
+        AppLogger.i('✅ Documento enviado para ${printer.name}');
+      } else {
+        AppLogger.w('⚠️ Impressão directa falhou em ${printer.name}');
+      }
+
+      return result;
+    } catch (e) {
+      AppLogger.e('❌ Erro na impressão directa', error: e);
+      return false;
+    }
+  }
+
+  /// Imprime PDF com diálogo de selecção de impressora (Windows print dialog)
+  static Future<bool> printPdfWithDialog(
+    Uint8List pdfBytes, {
+    String? documentName,
+  }) async {
+    try {
+      AppLogger.i('🖨️ Abrindo diálogo de impressão...');
+
       final result = await Printing.layoutPdf(
         onLayout: (format) async => pdfBytes,
         name: documentName ?? 'Documento',
@@ -28,7 +119,7 @@ class PrintService {
       if (result) {
         AppLogger.i('✅ Documento enviado para impressão');
       } else {
-        AppLogger.w('⚠️ Impressão cancelada ou falhou');
+        AppLogger.w('⚠️ Impressão cancelada');
       }
 
       return result;
@@ -38,33 +129,10 @@ class PrintService {
     }
   }
 
-  /// Abre diálogo de impressão com preview
-  static Future<bool> printWithPreview(Uint8List pdfBytes, {String? documentName}) async {
-    try {
-      AppLogger.i('🖨️ Abrindo preview de impressão...');
-
-      await Printing.sharePdf(
-        bytes: pdfBytes,
-        filename: '${documentName ?? 'documento'}.pdf',
-      );
-
-      return true;
-    } catch (e) {
-      AppLogger.e('❌ Erro ao abrir preview', error: e);
-      return false;
-    }
-  }
-
-  /// Lista impressoras disponíveis
-  static Future<List<Printer>> getAvailablePrinters() async {
-    try {
-      final printers = await Printing.listPrinters();
-      AppLogger.d('🖨️ ${printers.length} impressoras encontradas');
-      return printers;
-    } catch (e) {
-      AppLogger.e('Erro ao listar impressoras', error: e);
-      return [];
-    }
+  /// Imprime PDF (método legacy - usa diálogo)
+  /// @deprecated Use printPdfWithDialog ou printDirectToConfiguredPrinter
+  static Future<bool> printPdf(Uint8List pdfBytes, {String? documentName}) async {
+    return printPdfWithDialog(pdfBytes, documentName: documentName);
   }
 
   /// Imprime directamente numa impressora específica
@@ -107,7 +175,7 @@ class PrintService {
     // Configuração para talão (largura típica de 80mm)
     const pageFormat = PdfPageFormat(
       80 * PdfPageFormat.mm,
-      double.infinity, // Altura automática
+      double.infinity,
       marginAll: 5 * PdfPageFormat.mm,
     );
 
@@ -205,7 +273,7 @@ class PrintService {
                         ),
                       ],
                     ),
-                  ),),
+                  )),
 
               pw.SizedBox(height: 8),
               pw.Divider(),
@@ -246,7 +314,7 @@ class PrintService {
                 ...document.payments.map((p) => pw.Text(
                       '${p.paymentMethodName}: ${p.value.toStringAsFixed(2)}€',
                       style: const pw.TextStyle(fontSize: 9),
-                    ),),
+                    )),
                 pw.SizedBox(height: 8),
               ],
 
@@ -292,7 +360,7 @@ class PrintService {
     return file.path;
   }
 
-  /// Abre PDF no visualizador padrão do sistema (Windows)
+  /// Abre PDF no visualizador padrão do sistema
   static Future<bool> openPdf(String filePath) async {
     try {
       if (Platform.isWindows) {
@@ -322,6 +390,20 @@ class PrintService {
       return await openPdf(filePath);
     } catch (e) {
       AppLogger.e('Erro ao abrir PDF', error: e);
+      return false;
+    }
+  }
+
+  /// Partilha PDF (útil para mobile)
+  static Future<bool> sharePdf(Uint8List pdfBytes, {String? filename}) async {
+    try {
+      await Printing.sharePdf(
+        bytes: pdfBytes,
+        filename: '${filename ?? 'documento'}.pdf',
+      );
+      return true;
+    } catch (e) {
+      AppLogger.e('Erro ao partilhar PDF', error: e);
       return false;
     }
   }

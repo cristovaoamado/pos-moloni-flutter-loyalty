@@ -1,14 +1,20 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
+import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/auth/presentation/providers/auth_provider.dart';
+import 'package:pos_moloni_app/features/barcode/presentation/providers/barcode_scanner_provider.dart';
 import 'package:pos_moloni_app/features/cart/domain/entities/cart_item.dart';
 import 'package:pos_moloni_app/features/cart/presentation/providers/cart_provider.dart';
 import 'package:pos_moloni_app/features/checkout/presentation/widgets/checkout_dialog.dart';
+import 'package:pos_moloni_app/features/company/presentation/providers/company_data_provider.dart';
 import 'package:pos_moloni_app/features/company/presentation/providers/company_provider.dart';
 import 'package:pos_moloni_app/features/document_sets/presentation/providers/document_set_provider.dart';
+import 'package:pos_moloni_app/features/printer/presentation/providers/printer_provider.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
+import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
 import 'package:pos_moloni_app/features/settings/presentation/screens/settings_screen.dart';
 import 'package:pos_moloni_app/features/suspended_sales/presentation/providers/suspended_sales_provider.dart';
 import 'package:pos_moloni_app/features/suspended_sales/presentation/widgets/suspended_sales_dialog.dart';
@@ -29,19 +35,152 @@ class PosScreen extends ConsumerStatefulWidget {
 
 class _PosScreenState extends ConsumerState<PosScreen> {
   Customer _selectedCustomer = Customer.consumidorFinal;
+  
+  /// FocusNode para capturar eventos do barcode scanner
+  final FocusNode _scannerFocusNode = FocusNode();
+  
+  /// Buffer para acumular caracteres do scanner
+  final StringBuffer _barcodeBuffer = StringBuffer();
+  
+  /// Timestamp da última tecla
+  DateTime? _lastKeyTime;
+  
+  /// Tempo máximo entre teclas do scanner (ms)
+  static const int _maxKeyInterval = 100;
+  
+  /// Estado do foco do scanner (para UI reactiva)
+  bool _scannerHasFocus = false;
 
   @override
   void initState() {
     super.initState();
-    // Carregar séries de documentos e vendas suspensas ao iniciar
+    // Carregar vendas suspensas ao iniciar
+    // NOTA: Séries de documentos e métodos de pagamento são carregados
+    // pelo company_data_provider quando a empresa é selecionada
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(documentSetProvider.notifier).loadDocumentSets();
-      // Carregar vendas suspensas persistentes
-      final docOptions = ref.read(documentSetProvider).documentTypeOptions;
-      ref.read(suspendedSalesProvider.notifier).loadPersistentSales(
-        documentOptions: docOptions,
-      );
+      _loadSuspendedSales();
+      _initBarcodeScanner();
     });
+    
+    // Escutar mudanças de foco
+    _scannerFocusNode.addListener(_onFocusChange);
+  }
+  
+  @override
+  void dispose() {
+    _scannerFocusNode.removeListener(_onFocusChange);
+    _scannerFocusNode.dispose();
+    super.dispose();
+  }
+  
+  /// Callback quando o foco muda
+  void _onFocusChange() {
+    if (mounted) {
+      setState(() {
+        _scannerHasFocus = _scannerFocusNode.hasFocus;
+      });
+      
+      if (_scannerFocusNode.hasFocus) {
+        AppLogger.d('🔊 Scanner: Foco recuperado');
+      } else {
+        AppLogger.d('🔇 Scanner: Foco perdido');
+      }
+    }
+  }
+  
+  /// Força o foco no scanner
+  void _requestScannerFocus() {
+    _scannerFocusNode.requestFocus();
+    AppLogger.i('🔊 Scanner: Foco forçado pelo utilizador');
+  }
+  
+  /// Inicializa o barcode scanner
+  void _initBarcodeScanner() {
+    // Configurar callbacks do scanner
+    final scanner = ref.read(barcodeScannerProvider.notifier);
+    
+    scanner.onSingleProductFound = (product, {double? quantity}) {
+      // Produto único - adicionar ao carrinho com quantidade (peso variável) ou 1
+      final qty = quantity ?? 1.0;
+      final weightInfo = quantity != null ? ' (${quantity.toStringAsFixed(3)} kg)' : '';
+      AppLogger.i('🛒 Barcode: Adicionando ${product.name}$weightInfo ao carrinho');
+      
+      // Adicionar ao carrinho com a quantidade especificada
+      ref.read(cartProvider.notifier).addProduct(product.toEntity(), quantity: qty);
+      
+      // Mostrar produto em destaque (não na grid)
+      ref.read(productProvider.notifier).setScannedProduct(product);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.check_circle, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    quantity != null 
+                      ? '${product.name} - ${quantity.toStringAsFixed(3)} kg'
+                      : '${product.name} adicionado',
+                  ),
+                ),
+              ],
+            ),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 1),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // Recuperar foco após adicionar produto
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _requestScannerFocus();
+        });
+      }
+    };
+    
+    scanner.onMultipleProductsFound = (products) {
+      // Múltiplos produtos - mostrar na grid de pesquisa (NÃO adicionar ao carrinho)
+      AppLogger.i('🔍 Barcode: ${products.length} produtos encontrados - mostrar na grid');
+      
+      // Actualizar a pesquisa com os produtos encontrados
+      ref.read(productProvider.notifier).setBarcodeResults(products);
+      
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.info, color: Colors.white),
+                const SizedBox(width: 8),
+                Text('${products.length} produtos encontrados - selecione um'),
+              ],
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+        
+        // Recuperar foco após mostrar resultados
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _requestScannerFocus();
+        });
+      }
+    };
+    
+    // Iniciar escuta e pedir foco
+    scanner.startScanning();
+    _requestScannerFocus();
+    AppLogger.i('🔊 Barcode scanner inicializado no POS');
+  }
+
+  void _loadSuspendedSales() {
+    final docOptions = ref.read(documentSetProvider).documentTypeOptions;
+    ref.read(suspendedSalesProvider.notifier).loadPersistentSales(
+      documentOptions: docOptions,
+    );
   }
 
   // ==================== AÇÕES DE PRODUTO ====================
@@ -65,6 +204,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       if (item != null) {
         _showItemOptionsDialog(item, initialTab: 0);
       }
+    } else {
+      // Recuperar foco do scanner após adicionar produto
+      Future.delayed(const Duration(milliseconds: 100), () {
+        if (mounted) _requestScannerFocus();
+      });
     }
   }
 
@@ -89,7 +233,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           ref.read(cartProvider.notifier).removeItem(item.id);
         },
       ),
-    );
+    ).then((_) {
+      // Recuperar foco do scanner quando o diálogo fecha
+      if (mounted) _requestScannerFocus();
+    });
   }
 
   // ==================== TIPO DE DOCUMENTO ====================
@@ -187,7 +334,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           ],
         ),
       ),
-    );
+    ).then((_) {
+      if (mounted) _requestScannerFocus();
+    });
   }
 
   // ==================== CLIENTES ====================
@@ -200,7 +349,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           setState(() => _selectedCustomer = customer);
         },
       ),
-    );
+    ).then((_) {
+      if (mounted) _requestScannerFocus();
+    });
   }
 
   // ==================== VENDAS SUSPENSAS ====================
@@ -211,7 +362,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       builder: (context) => SuspendedSalesDialog(
         onRestore: _restoreSuspendedSale,
       ),
-    );
+    ).then((_) {
+      if (mounted) _requestScannerFocus();
+    });
   }
 
   Future<void> _suspendCurrentSale() async {
@@ -231,13 +384,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     final selectedOption = ref.read(documentSetProvider).selectedOption;
 
-    // Suspender usando o provider
+    // Suspender a venda
     await ref.read(suspendedSalesProvider.notifier).suspendSale(
       items: cart.items,
       customer: _selectedCustomer,
       documentOption: selectedOption,
       note: result.note,
-      persistent: result.isPersistent,
     );
 
     // Limpar carrinho
@@ -246,12 +398,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.isPersistent
-                ? 'Venda suspensa e guardada permanentemente'
-                : 'Venda suspensa',
-          ),
+        const SnackBar(
+          content: Text('Venda suspensa'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -261,12 +409,12 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   Future<void> _restoreSuspendedSale(SuspendedSale sale) async {
     final cart = ref.read(cartProvider);
 
-    // Se há items no carrinho, confirmar substituição
-    if (cart.items.isNotEmpty) {
+    // Se carrinho não está vazio, pedir confirmação
+    if (!cart.isEmpty) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
-          title: const Text('Substituir carrinho?'),
+          title: const Text('Restaurar Venda'),
           content: const Text(
             'O carrinho atual será substituído pela venda suspensa.',
           ),
@@ -325,7 +473,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
   // ==================== FINALIZAR / CANCELAR ====================
 
-  Future<void> _finalizeSale() async {
+    Future<void> _finalizeSale() async {
     final cart = ref.read(cartProvider);
     if (cart.isEmpty) return;
 
@@ -342,7 +490,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       return;
     }
 
-    // Abrir diálogo de checkout
+    // Abrir diálogo de checkout - PASSAR DESCONTOS
     final result = await showDialog<bool>(
       context: context,
       barrierDismissible: false,
@@ -351,6 +499,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         customer: _selectedCustomer,
         items: cart.items,
         total: cart.total,
+        globalDiscount: cart.globalDiscount,           // NOVO
+        globalDiscountValue: cart.globalDiscountValue, // NOVO
       ),
     );
 
@@ -359,6 +509,9 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       ref.read(cartProvider.notifier).clearCart();
       setState(() => _selectedCustomer = Customer.consumidorFinal);
     }
+    
+    // Recuperar foco do scanner
+    if (mounted) _requestScannerFocus();
   }
 
   void _cancelSale() {
@@ -386,7 +539,33 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           ),
         ],
       ),
-    );
+    ).then((_) {
+      if (mounted) _requestScannerFocus();
+    });
+  }
+
+  /// Abre a gaveta do dinheiro
+  Future<void> _openCashDrawer() async {
+    final result = await ref.read(printerProvider.notifier).openCashDrawer();
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                result.success ? Icons.check_circle : Icons.error,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 8),
+              Text(result.success ? 'Gaveta aberta' : (result.error ?? 'Erro ao abrir gaveta')),
+            ],
+          ),
+          backgroundColor: result.success ? Colors.green : Colors.red,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
   }
 
   // ==================== BUILD ====================
@@ -396,47 +575,241 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     final selectedCompany = ref.watch(companyProvider).selectedCompany;
     final docSetState = ref.watch(documentSetProvider);
     final suspendedState = ref.watch(suspendedSalesProvider);
+    final companyDataState = ref.watch(companyDataProvider);
+    final scannerState = ref.watch(barcodeScannerProvider);
 
-    return Scaffold(
-      appBar: _buildAppBar(selectedCompany?.name ?? AppConstants.appName),
-      body: Row(
-        children: [
-          // Painel de Pesquisa (esquerda - ~65%)
-          Expanded(
-            flex: 7,
-            child: ProductSearchPanel(onProductTap: _onProductTap),
-          ),
-          const VerticalDivider(width: 1),
-          // Talão de Venda (direita - ~35%)
-          Expanded(
-            flex: 4,
-            child: ReceiptPanel(
-              selectedDocumentOption: docSetState.selectedOption,
-              selectedCustomer: _selectedCustomer,
-              suspendedSalesCount: suspendedState.sales.length,
-              isLoadingDocTypes: docSetState.isLoading,
-              onDocumentTypeTap: _showDocumentTypeSelector,
-              onCustomerSearchTap: _showCustomerSearch,
-              onSuspendedSalesTap: _showSuspendedSales,
-              onItemTap: _showItemOptionsDialog,
-              onCancelTap: _cancelSale,
-              onSuspendTap: _suspendCurrentSale,
-              onFinalizeTap: _finalizeSale,
+    // Se está a carregar dados da empresa, mostrar loading no AppBar
+    final isLoadingData = companyDataState.isLoading;
+    
+    // Escutar erros do scanner
+    ref.listen<BarcodeScannerState>(barcodeScannerProvider, (prev, next) {
+      if (next.lastResult == BarcodeScanResult.notFound && next.error != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Row(
+              children: [
+                const Icon(Icons.warning, color: Colors.white),
+                const SizedBox(width: 8),
+                Expanded(child: Text(next.error!)),
+              ],
             ),
+            backgroundColor: Colors.red,
+            duration: const Duration(seconds: 2),
+            behavior: SnackBarBehavior.floating,
           ),
-        ],
+        );
+        
+        // Recuperar foco após erro
+        Future.delayed(const Duration(milliseconds: 100), () {
+          if (mounted) _requestScannerFocus();
+        });
+      }
+    });
+
+    // Envolver com KeyboardListener para capturar eventos do scanner
+    return KeyboardListener(
+      focusNode: _scannerFocusNode,
+      autofocus: true,
+      onKeyEvent: _handleKeyEvent,
+      child: GestureDetector(
+        // Re-focar quando toca fora de campos de texto
+        behavior: HitTestBehavior.translucent,
+        onTap: () {
+          final currentFocus = FocusScope.of(context).focusedChild;
+          if (currentFocus == null || currentFocus == _scannerFocusNode) {
+            _scannerFocusNode.requestFocus();
+          }
+        },
+        child: Scaffold(
+          appBar: _buildAppBar(
+            selectedCompany?.name ?? AppConstants.appName,
+            isLoading: isLoadingData,
+            isScannerActive: _scannerHasFocus, // Usar estado real do foco
+          ),
+          body: Row(
+            children: [
+              // Painel de Pesquisa (esquerda - ~65%)
+              Expanded(
+                flex: 7,
+                child: ProductSearchPanel(
+                  onProductTap: _onProductTap,
+                  onSearchFocusLost: _requestScannerFocus,
+                ),
+              ),
+              const VerticalDivider(width: 1),
+              // Talão de Venda (direita - ~35%)
+              Expanded(
+                flex: 4,
+                child: ReceiptPanel(
+                  selectedDocumentOption: docSetState.selectedOption,
+                  selectedCustomer: _selectedCustomer,
+                  suspendedSalesCount: suspendedState.sales.length,
+                  isLoadingDocTypes: docSetState.isLoading,
+                  onDocumentTypeTap: _showDocumentTypeSelector,
+                  onCustomerSearchTap: _showCustomerSearch,
+                  onSuspendedSalesTap: _showSuspendedSales,
+                  onItemTap: _showItemOptionsDialog,
+                  onCancelTap: _cancelSale,
+                  onSuspendTap: _suspendCurrentSale,
+                  onFinalizeTap: _finalizeSale,
+                  onOpenDrawerTap: _openCashDrawer,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
+  
+  // ==================== BARCODE SCANNER ====================
+  
+  /// Processa eventos de teclado do barcode scanner
+  void _handleKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) return;
+    
+    final now = DateTime.now();
+    
+    // Se passou muito tempo desde a última tecla, limpar buffer
+    if (_lastKeyTime != null) {
+      final elapsed = now.difference(_lastKeyTime!).inMilliseconds;
+      if (elapsed > _maxKeyInterval) {
+        _barcodeBuffer.clear();
+      }
+    }
+    
+    _lastKeyTime = now;
+    
+    // Verificar se é Enter (fim do código de barras)
+    if (event.logicalKey == LogicalKeyboardKey.enter ||
+        event.logicalKey == LogicalKeyboardKey.numpadEnter) {
+      _processBarcode();
+      return;
+    }
+    
+    // Adicionar caractere ao buffer
+    final char = _getCharFromKey(event);
+    if (char != null) {
+      _barcodeBuffer.write(char);
+    }
+  }
+  
+  /// Processa o buffer como código de barras
+  void _processBarcode() {
+    final barcode = _barcodeBuffer.toString().trim();
+    _barcodeBuffer.clear();
+    
+    if (barcode.length >= 3) {
+      AppLogger.i('📦 Barcode detectado: $barcode');
+      ref.read(barcodeScannerProvider.notifier).processBarcode(barcode);
+    }
+  }
+  
+  /// Extrai o caractere de um KeyEvent
+  String? _getCharFromKey(KeyDownEvent event) {
+    final char = event.character;
+    if (char != null && char.isNotEmpty && _isValidBarcodeChar(char)) {
+      return char;
+    }
+    
+    final keyLabel = event.logicalKey.keyLabel;
+    if (keyLabel.length == 1 && _isValidBarcodeChar(keyLabel)) {
+      return keyLabel;
+    }
+    
+    return null;
+  }
+  
+  /// Verifica se o caractere é válido para código de barras
+  bool _isValidBarcodeChar(String char) {
+    if (char.length != 1) return false;
+    final code = char.codeUnitAt(0);
+    
+    // Aceitar dígitos, letras, hífen e ponto
+    return (code >= 48 && code <= 57) ||  // 0-9
+           (code >= 65 && code <= 90) ||  // A-Z
+           (code >= 97 && code <= 122) || // a-z
+           code == 45 ||                   // -
+           code == 46;                     // .
+  }
 
-  PreferredSizeWidget _buildAppBar(String title) {
+  PreferredSizeWidget _buildAppBar(String title, {bool isLoading = false, bool isScannerActive = false}) {
     final user = ref.watch(currentUserProvider);
 
     return AppBar(
-      title: Text(title),
+      title: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(title),
+          if (isLoading) ...[
+            const SizedBox(width: 12),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: Colors.white,
+              ),
+            ),
+          ],
+        ],
+      ),
       backgroundColor: Theme.of(context).colorScheme.primary,
       foregroundColor: Theme.of(context).colorScheme.onPrimary,
       actions: [
+        // Indicador do scanner (clicável para recuperar foco)
+        Tooltip(
+          message: isScannerActive 
+              ? 'Scanner activo - clique para verificar'
+              : 'Scanner inactivo - clique para activar',
+          child: InkWell(
+            onTap: _requestScannerFocus,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: isScannerActive 
+                    ? Colors.green.withOpacity(0.3)
+                    : Colors.red.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: isScannerActive ? Colors.green : Colors.red, 
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    isScannerActive 
+                        ? Icons.qr_code_scanner 
+                        : Icons.qr_code_scanner,
+                    size: 16, 
+                    color: Colors.white,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    isScannerActive ? 'Scanner' : 'Scanner OFF',
+                    style: const TextStyle(fontSize: 11, color: Colors.white),
+                  ),
+                  if (!isScannerActive) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.touch_app, size: 12, color: Colors.white70),
+                  ],
+                ],
+              ),
+            ),
+          ),
+        ),
+        // Botão recarregar dados
+        IconButton(
+          icon: const Icon(Icons.refresh),
+          onPressed: isLoading ? null : () {
+            ref.read(companyDataProvider.notifier).reloadCompanyData();
+          },
+          tooltip: 'Recarregar dados',
+        ),
         if (user != null)
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -444,7 +817,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(
@@ -494,6 +867,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       ),
     );
     if (confirm == true) {
+      // Limpar dados da empresa antes de logout
+      ref.read(companyDataProvider.notifier).clearData();
       ref.read(authProvider.notifier).logout();
     }
   }

@@ -77,14 +77,55 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
       AppLogger.i('✅ Carregadas ${sets.length} séries');
 
       // Criar opções combinando séries com tipos de documento
+      // IMPORTANTE: Criar opções para TODOS os tipos suportados em cada série
+      // Isto permite usar qualquer tipo de documento disponível no POS
       final options = <DocumentTypeOption>[];
       
+      // Encontrar a série default ou a primeira série disponível
+      DocumentSet? defaultSet;
       for (final docSet in sets) {
+        if (docSet.isDefault) {
+          defaultSet = docSet;
+          break;
+        }
+      }
+      defaultSet ??= sets.isNotEmpty ? sets.first : null;
+      
+      if (defaultSet == null) {
+        AppLogger.w('⚠️ Nenhuma série de documentos encontrada');
+        state = state.copyWith(
+          documentSets: sets,
+          documentTypeOptions: [],
+          isLoading: false,
+        );
+        return;
+      }
+      
+      AppLogger.d('📄 Série default: "${defaultSet.name}" (ID: ${defaultSet.id})');
+      
+      // Criar opções para TODOS os tipos suportados usando a série default
+      // Isto garante que o utilizador pode escolher FS, FT ou FR
+      for (final docType in _supportedTypes) {
+        options.add(DocumentTypeOption(
+          documentSet: defaultSet,
+          documentType: docType,
+        ));
+        AppLogger.d('   ✓ Adicionado: ${docType.name} - ${defaultSet.name}');
+      }
+      
+      // Se há outras séries, adicionar também as suas opções
+      for (final docSet in sets) {
+        if (docSet.id == defaultSet.id) continue; // Já adicionámos
+        
+        AppLogger.d('📄 Série adicional: "${docSet.name}" (ID: ${docSet.id})');
+        
+        // Adicionar todos os tipos suportados para esta série também
         for (final docType in _supportedTypes) {
           options.add(DocumentTypeOption(
             documentSet: docSet,
             documentType: docType,
-          ),);
+          ));
+          AppLogger.d('   ✓ Adicionado: ${docType.name} - ${docSet.name}');
         }
       }
 
@@ -96,12 +137,13 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
         return a.documentSet.name.compareTo(b.documentSet.name);
       });
 
-      // Selecionar opção default (Fatura Simplificada da primeira série)
+      // Selecionar opção default (Fatura Simplificada da série default)
       DocumentTypeOption? defaultOption;
       if (options.isNotEmpty) {
-        // Tentar encontrar Fatura Simplificada
+        // Tentar encontrar Fatura Simplificada da série default
         defaultOption = options.firstWhere(
-          (o) => o.documentType == DocumentTypeId.simplifiedInvoice,
+          (o) => o.documentType == DocumentTypeId.simplifiedInvoice && 
+                 o.documentSet.id == defaultSet!.id,
           orElse: () => options.first,
         );
       }
@@ -114,6 +156,9 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
       );
 
       AppLogger.i('📄 ${options.length} opções de documento disponíveis');
+      for (final opt in options) {
+        AppLogger.d('   - ${opt.displayName} (set: ${opt.documentSet.id}, type: ${opt.documentType.id})');
+      }
       if (defaultOption != null) {
         AppLogger.i('📄 Opção selecionada: ${defaultOption.displayName}');
       }

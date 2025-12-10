@@ -62,6 +62,22 @@ class DocumentSetRemoteDataSourceImpl implements DocumentSetRemoteDataSource {
         if (data is List) {
           AppLogger.i('✅ Encontradas ${data.length} séries de documentos');
           
+          // Log detalhado de cada série
+          for (final item in data) {
+            if (item is Map) {
+              AppLogger.d('📄 Série: ${item['name']} (ID: ${item['document_set_id']})');
+              AppLogger.d('   active_by_default: ${item['active_by_default']} (type: ${item['active_by_default']?.runtimeType})');
+              
+              // Verificar outros campos que podem indicar tipos suportados
+              if (item['document_type_templates'] != null) {
+                AppLogger.d('   document_type_templates: ${item['document_type_templates']}');
+              }
+              if (item['template'] != null) {
+                AppLogger.d('   template: ${item['template']}');
+              }
+            }
+          }
+          
           return data
               .map((json) => DocumentSetModel.fromJson(json as Map<String, dynamic>))
               .toList();
