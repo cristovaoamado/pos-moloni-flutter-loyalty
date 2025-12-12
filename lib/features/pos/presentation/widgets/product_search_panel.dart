@@ -307,7 +307,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     return GridView.builder(
       padding: const EdgeInsets.all(8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
+        crossAxisCount: 5,
         childAspectRatio: 0.85,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
