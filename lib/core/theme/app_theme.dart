@@ -14,7 +14,7 @@ class AppTheme {
 
   /// Tema claro (principal)
   static ThemeData get lightTheme {
-    final colorScheme = ColorScheme(
+    const colorScheme = ColorScheme(
       brightness: Brightness.light,
       primary: AppColors.primary,
       onPrimary: Colors.white,
@@ -32,9 +32,6 @@ class AppTheme {
       surface: AppColors.surface,
       onSurface: AppColors.textPrimary,
       surfaceContainerHighest: AppColors.surfaceVariant,
-
-      background: AppColors.background,
-      onBackground: AppColors.textPrimary,
 
       outline: AppColors.grey400,
       outlineVariant: AppColors.grey200,
@@ -165,8 +162,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(borderRadius),
           borderSide: BorderSide(color: colorScheme.error, width: 1.5),
         ),
-        labelStyle: TextStyle(fontSize: 16, color: AppColors.textSecondary),
-        hintStyle: TextStyle(fontSize: 16, color: AppColors.textHint),
+        labelStyle: const TextStyle(fontSize: 16, color: AppColors.textSecondary),
+        hintStyle: const TextStyle(fontSize: 16, color: AppColors.textHint),
       ),
 
       // Cards
@@ -183,7 +180,7 @@ class AppTheme {
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        labelStyle: TextStyle(
+        labelStyle: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
           color: AppColors.textPrimary,
@@ -195,7 +192,7 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(borderRadius * 2),
         ),
-        titleTextStyle: TextStyle(
+        titleTextStyle: const TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,
@@ -204,7 +201,7 @@ class AppTheme {
       ),
 
       // Divider
-      dividerTheme: DividerThemeData(
+      dividerTheme: const DividerThemeData(
         thickness: 1,
         color: AppColors.divider,
       ),
@@ -234,10 +231,8 @@ class AppTheme {
   static ThemeData get darkTheme {
     final colorScheme = lightTheme.colorScheme.copyWith(
       brightness: Brightness.dark,
-      background: AppColors.grey900,
       surface: AppColors.grey800,
       onSurface: AppColors.white,
-      onBackground: AppColors.white,
     );
 
     return lightTheme.copyWith(
@@ -277,7 +272,7 @@ class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
       ),
-      side: BorderSide(color: AppColors.secondary, width: 1.5),
+      side: const BorderSide(color: AppColors.secondary, width: 1.5),
       textStyle: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w600,
