@@ -18,6 +18,19 @@ class PrinterConfig {
     this.printCopy = false,
   });
 
+  factory PrinterConfig.fromJson(Map<String, dynamic> json) {
+    return PrinterConfig(
+      name: json['name'] as String? ?? '',
+      connectionType: PrinterConnectionType.values[json['connectionType'] as int? ?? 0],
+      address: json['address'] as String? ?? '',
+      port: json['port'] as int? ?? 9100,
+      paperWidth: json['paperWidth'] as int? ?? 80,
+      isEnabled: json['isEnabled'] as bool? ?? false,
+      autoPrint: json['autoPrint'] as bool? ?? true,
+      printCopy: json['printCopy'] as bool? ?? false,
+    );
+  }
+
   /// Nome da impressora (para USB) ou identificador
   final String name;
 
@@ -81,19 +94,6 @@ class PrinterConfig {
       'autoPrint': autoPrint,
       'printCopy': printCopy,
     };
-  }
-
-  factory PrinterConfig.fromJson(Map<String, dynamic> json) {
-    return PrinterConfig(
-      name: json['name'] as String? ?? '',
-      connectionType: PrinterConnectionType.values[json['connectionType'] as int? ?? 0],
-      address: json['address'] as String? ?? '',
-      port: json['port'] as int? ?? 9100,
-      paperWidth: json['paperWidth'] as int? ?? 80,
-      isEnabled: json['isEnabled'] as bool? ?? false,
-      autoPrint: json['autoPrint'] as bool? ?? true,
-      printCopy: json['printCopy'] as bool? ?? false,
-    );
   }
 
   @override

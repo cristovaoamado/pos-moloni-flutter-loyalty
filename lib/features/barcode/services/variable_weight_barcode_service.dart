@@ -11,6 +11,7 @@
 /// - Formato 12 dígitos (UPC-A): 2PPPPPWWWWC
 /// 
 /// Configuração flexível permite adaptar a diferentes balanças/sistemas
+library;
 
 class VariableWeightBarcodeConfig {
   const VariableWeightBarcodeConfig({

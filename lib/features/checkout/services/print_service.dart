@@ -53,7 +53,7 @@ class PrintService {
       try {
         return printers.firstWhere(
           (p) => p.name.toLowerCase().contains(name.toLowerCase()) ||
-                 name.toLowerCase().contains(p.name.toLowerCase())
+                 name.toLowerCase().contains(p.name.toLowerCase()),
         );
       } catch (e) {
         return null;
@@ -273,7 +273,7 @@ class PrintService {
                         ),
                       ],
                     ),
-                  )),
+                  ),),
 
               pw.SizedBox(height: 8),
               pw.Divider(),
@@ -314,7 +314,7 @@ class PrintService {
                 ...document.payments.map((p) => pw.Text(
                       '${p.paymentMethodName}: ${p.value.toStringAsFixed(2)}€',
                       style: const pw.TextStyle(fontSize: 9),
-                    )),
+                    ),),
                 pw.SizedBox(height: 8),
               ],
 

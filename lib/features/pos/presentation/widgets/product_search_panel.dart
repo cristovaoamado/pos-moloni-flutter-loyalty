@@ -14,6 +14,7 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
   });
 
   final Function(Product) onProductTap;
+
   /// Callback quando o campo de pesquisa perde o foco
   final VoidCallback? onSearchFocusLost;
 
@@ -32,7 +33,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     // Escutar mudanças de foco
     _searchFocusNode.addListener(_onSearchFocusChange);
   }
-  
+
   void _onSearchFocusChange() {
     // Quando o campo de pesquisa perde o foco, notificar o pai
     if (!_searchFocusNode.hasFocus) {
@@ -82,7 +83,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             decoration: InputDecoration(
               labelText: 'Pesquisa de artigos',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
@@ -147,11 +149,12 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                       ? Image.network(
                           product.imageUrl!,
                           fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => _buildScannedProductPlaceholder(),
+                          errorBuilder: (_, __, ___) =>
+                              _buildScannedProductPlaceholder(),
                         )
                       : _buildScannedProductPlaceholder(),
                 ),
-                
+
                 // Lado direito: Info e acções
                 Expanded(
                   child: Padding(
@@ -166,7 +169,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                             Container(
                               padding: const EdgeInsets.all(6),
                               decoration: BoxDecoration(
-                                color: Colors.green.withOpacity(0.1),
+                                color: Colors.green.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -187,7 +190,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                           ],
                         ),
                         const SizedBox(height: 20),
-                        
+
                         // Nome do produto
                         Text(
                           product.name,
@@ -199,12 +202,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                           overflow: TextOverflow.ellipsis,
                         ),
                         const SizedBox(height: 16),
-                        
+
                         // Preço grande
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 10,),
                           decoration: BoxDecoration(
-                            color: Theme.of(context).colorScheme.primaryContainer,
+                            color:
+                                Theme.of(context).colorScheme.primaryContainer,
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
@@ -212,12 +217,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                             style: TextStyle(
                               fontSize: 28,
                               fontWeight: FontWeight.bold,
-                              color: Theme.of(context).colorScheme.onPrimaryContainer,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .onPrimaryContainer,
                             ),
                           ),
                         ),
                         const SizedBox(height: 24),
-                        
+
                         // Botão para adicionar mais
                         SizedBox(
                           width: double.infinity,
@@ -226,7 +233,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                             icon: const Icon(Icons.add_shopping_cart),
                             label: const Text('Adicionar mais'),
                             style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 20, vertical: 14,),
                             ),
                           ),
                         ),
@@ -260,7 +268,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search, size: 64, color: Theme.of(context).colorScheme.outline),
+          Icon(Icons.search,
+              size: 64, color: Theme.of(context).colorScheme.outline,),
           const SizedBox(height: 16),
           Text(
             _searchController.text.isEmpty
@@ -334,14 +343,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
               color: Theme.of(context).colorScheme.onSurfaceVariant,
             ),
           ),
-          
+
           const Spacer(),
-          
+
           // Botão carregar mais ou texto "todos carregados"
           if (productState.hasMore)
             ElevatedButton.icon(
-              onPressed: productState.isLoadingMore 
-                  ? null 
+              onPressed: productState.isLoadingMore
+                  ? null
                   : () => ref.read(productProvider.notifier).loadMoreProducts(),
               icon: productState.isLoadingMore
                   ? const SizedBox(
@@ -350,9 +359,12 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.add, size: 18),
-              label: Text(productState.isLoadingMore ? 'A carregar...' : 'Carregar mais'),
+              label: Text(productState.isLoadingMore
+                  ? 'A carregar...'
+                  : 'Carregar mais',),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             )
           else
@@ -391,7 +403,8 @@ class _ProductCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart = ref.watch(cartProvider.notifier).containsProduct(product.id);
+    final isInCart =
+        ref.watch(cartProvider.notifier).containsProduct(product.id);
 
     return Card(
       elevation: 2,
@@ -406,7 +419,8 @@ class _ProductCard extends ConsumerWidget {
                 ? Image.network(
                     product.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
+                    errorBuilder: (_, __, ___) =>
+                        _buildPlaceholderImage(context),
                   )
                 : _buildPlaceholderImage(context),
 
@@ -421,7 +435,10 @@ class _ProductCard extends ConsumerWidget {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [Colors.transparent, Colors.black.withOpacity(0.7)],
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withValues(alpha: 0.7),
+                    ],
                   ),
                 ),
                 child: Column(
@@ -451,14 +468,16 @@ class _ProductCard extends ConsumerWidget {
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2,),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '${product.totalTaxRate.toStringAsFixed(0)}%',
-                            style: const TextStyle(fontSize: 10, color: Colors.white),
+                            style: const TextStyle(
+                                fontSize: 10, color: Colors.white,),
                           ),
                         ),
                       ],
@@ -480,7 +499,7 @@ class _ProductCard extends ConsumerWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),

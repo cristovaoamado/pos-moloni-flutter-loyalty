@@ -18,10 +18,6 @@ class PrintResult {
     this.error,
   });
 
-  final bool success;
-  final String? message;
-  final String? error;
-
   factory PrintResult.ok([String? message]) => PrintResult(
         success: true,
         message: message ?? 'Impressão concluída',
@@ -31,6 +27,10 @@ class PrintResult {
         success: false,
         error: error,
       );
+
+  final bool success;
+  final String? message;
+  final String? error;
 }
 
 /// Serviço de impressão térmica
@@ -141,7 +141,7 @@ class ThermalPrinterService {
       } else {
         final available = _availablePrinters.map((p) => p.name).join(', ');
         return PrintResult.fail(
-          'Impressora "${_config!.name}" não encontrada.\nDisponíveis: $available'
+          'Impressora "${_config!.name}" não encontrada.\nDisponíveis: $available',
         );
       }
     } catch (e) {
@@ -361,10 +361,10 @@ class ThermalPrinterService {
                   ),
                   if (item.hasDiscount)
                     pw.Text('  Desc. ${item.discount.toStringAsFixed(0)}%: -${item.discountValue.toStringAsFixed(2)} EUR', 
-                      style: pw.TextStyle(fontSize: 8, color: PdfColors.orange800)),
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.orange800),),
                 ],
               ),
-            )),
+            ),),
             
             pw.Divider(thickness: 0.5),
             
@@ -392,10 +392,10 @@ class ThermalPrinterService {
               ...p.items.where((i) => i.hasDiscount).map((i) => pw.Text(
                 '${i.name}: ${i.discount.toStringAsFixed(0)}% = -${i.discountValue.toStringAsFixed(2)} EUR',
                 style: const pw.TextStyle(fontSize: 8),
-              )),
+              ),),
               if (p.globalDiscount > 0)
                 pw.Text('Desc. global ${p.globalDiscount.toStringAsFixed(0)}%: -${p.globalDiscountValue.toStringAsFixed(2)} EUR',
-                  style: const pw.TextStyle(fontSize: 8)),
+                  style: const pw.TextStyle(fontSize: 8),),
               _pdfRow('Total descontos:', '-${totalDiscount.toStringAsFixed(2)} EUR', bold: true),
               pw.Divider(thickness: 0.5),
             ],
@@ -517,7 +517,7 @@ class ThermalPrinterService {
     _addLine(bytes, 'IVA:', _formatMoney(p.taxTotal), width);
     bytes.addAll(_cmdBoldOn);
     bytes.addAll(_cmdDoubleHeight);
-    final totalLabel = 'TOTAL:';
+    const totalLabel = 'TOTAL:';
     final totalValue = _formatMoney(p.total);
     final spacesTotal = (width ~/ 2) - totalLabel.length - totalValue.length;
     bytes.addAll(_textToBytes('$totalLabel${' ' * spacesTotal}$totalValue'));
@@ -671,10 +671,6 @@ class ThermalPrinterService {
 }
 
 class _ReceiptParams {
-  final String companyName, companyVat, companyAddress, documentType, documentNumber, date, time, paymentMethod;
-  final List<ReceiptItem> items;
-  final double subtotal, taxTotal, total, globalDiscount, globalDiscountValue, itemsDiscountValue;
-  final String? customerName, customerVat, atcud, footerMessage;
 
   _ReceiptParams({
     required this.companyName, required this.companyVat, required this.companyAddress,
@@ -683,16 +679,20 @@ class _ReceiptParams {
     required this.paymentMethod, this.customerName, this.customerVat, this.atcud, this.footerMessage,
     this.globalDiscount = 0, this.globalDiscountValue = 0, this.itemsDiscountValue = 0,
   });
+  final String companyName, companyVat, companyAddress, documentType, documentNumber, date, time, paymentMethod;
+  final List<ReceiptItem> items;
+  final double subtotal, taxTotal, total, globalDiscount, globalDiscountValue, itemsDiscountValue;
+  final String? customerName, customerVat, atcud, footerMessage;
 }
 
 class ReceiptItem {
-  final String name;
-  final double quantity, unitPrice, total, taxRate, discount;
 
   const ReceiptItem({
     required this.name, required this.quantity, required this.unitPrice, required this.total,
     this.taxRate = 23, this.discount = 0,
   });
+  final String name;
+  final double quantity, unitPrice, total, taxRate, discount;
 
   bool get hasDiscount => discount > 0;
   double get discountValue => (quantity * unitPrice) * (discount / 100);

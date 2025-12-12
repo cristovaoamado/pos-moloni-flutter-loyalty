@@ -53,6 +53,30 @@ class ScaleConfig {
     this.decimalPlaces = 3,
   });
 
+  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
+    return ScaleConfig(
+      connectionType: ScaleConnectionType.values.firstWhere(
+        (e) => e.name == json['connectionType'],
+        orElse: () => ScaleConnectionType.serial,
+      ),
+      protocol: ScaleProtocol.values.firstWhere(
+        (e) => e.name == json['protocol'],
+        orElse: () => ScaleProtocol.dibal,
+      ),
+      host: json['host'] ?? '192.168.1.100',
+      port: json['port'] ?? 3000,
+      serialPort: json['serialPort'] ?? '',
+      baudRate: json['baudRate'] ?? 9600,
+      dataBits: json['dataBits'] ?? 8,
+      stopBits: json['stopBits'] ?? 1,
+      parity: json['parity'] ?? SerialPortParity.none,
+      timeout: Duration(milliseconds: json['timeout'] ?? 3000),
+      requestCommand: json['requestCommand'],
+      weightRegex: json['weightRegex'],
+      decimalPlaces: json['decimalPlaces'] ?? 3,
+    );
+  }
+
   /// Tipo de conexão
   final ScaleConnectionType connectionType;
 
@@ -164,30 +188,6 @@ class ScaleConfig {
     'weightRegex': weightRegex,
     'decimalPlaces': decimalPlaces,
   };
-
-  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
-    return ScaleConfig(
-      connectionType: ScaleConnectionType.values.firstWhere(
-        (e) => e.name == json['connectionType'],
-        orElse: () => ScaleConnectionType.serial,
-      ),
-      protocol: ScaleProtocol.values.firstWhere(
-        (e) => e.name == json['protocol'],
-        orElse: () => ScaleProtocol.dibal,
-      ),
-      host: json['host'] ?? '192.168.1.100',
-      port: json['port'] ?? 3000,
-      serialPort: json['serialPort'] ?? '',
-      baudRate: json['baudRate'] ?? 9600,
-      dataBits: json['dataBits'] ?? 8,
-      stopBits: json['stopBits'] ?? 1,
-      parity: json['parity'] ?? SerialPortParity.none,
-      timeout: Duration(milliseconds: json['timeout'] ?? 3000),
-      requestCommand: json['requestCommand'],
-      weightRegex: json['weightRegex'],
-      decimalPlaces: json['decimalPlaces'] ?? 3,
-    );
-  }
 }
 
 /// Resultado da leitura de peso
@@ -594,8 +594,7 @@ class ScaleService {
           return _parseCasResponse(cleaned);
         case ScaleProtocol.epelsa:
         case ScaleProtocol.generic:
-        default:
-          return _parseGenericResponse(cleaned);
+        return _parseGenericResponse(cleaned);
       }
     } catch (e) {
       AppLogger.e('⚖️ Erro ao fazer parse da resposta', error: e);

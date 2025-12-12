@@ -98,13 +98,14 @@ class ReceiptPanel extends ConsumerWidget {
           const SizedBox(width: 4),
           Expanded(
             child: _SmallButton(
-              label: cart.hasGlobalDiscount 
+              label: cart.hasGlobalDiscount
                   ? 'Desc.\n${cart.formattedGlobalDiscount}'
                   : 'Desconto\nglobal',
               icon: Icons.percent,
-              onPressed: cart.isEmpty 
-                  ? null 
-                  : () => _showGlobalDiscountDialog(context, ref, cart.globalDiscount),
+              onPressed: cart.isEmpty
+                  ? null
+                  : () => _showGlobalDiscountDialog(
+                      context, ref, cart.globalDiscount,),
               isActive: cart.hasGlobalDiscount,
             ),
           ),
@@ -113,7 +114,8 @@ class ReceiptPanel extends ConsumerWidget {
     );
   }
 
-  void _showGlobalDiscountDialog(BuildContext context, WidgetRef ref, double currentDiscount) {
+  void _showGlobalDiscountDialog(
+      BuildContext context, WidgetRef ref, double currentDiscount,) {
     showDialog(
       context: context,
       builder: (context) => _GlobalDiscountDialog(
@@ -155,9 +157,10 @@ class ReceiptPanel extends ConsumerWidget {
                     )
                   else if (selectedDocumentOption != null) ...[
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 6, vertical: 2,),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
+                        color: Colors.white.withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -173,7 +176,8 @@ class ReceiptPanel extends ConsumerWidget {
                   ],
                   Expanded(
                     child: Text(
-                      selectedDocumentOption?.displayName ?? 'Selecionar documento',
+                      selectedDocumentOption?.displayName ??
+                          'Selecionar documento',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary,
                         fontWeight: FontWeight.bold,
@@ -181,7 +185,8 @@ class ReceiptPanel extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
-                  Icon(Icons.arrow_drop_down, color: Theme.of(context).colorScheme.onPrimary),
+                  Icon(Icons.arrow_drop_down,
+                      color: Theme.of(context).colorScheme.onPrimary,),
                 ],
               ),
             ),
@@ -191,7 +196,11 @@ class ReceiptPanel extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.3)),
+              border: Border.all(
+                  color: Theme.of(context)
+                      .colorScheme
+                      .outline
+                      .withValues(alpha: 0.3),),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -200,10 +209,13 @@ class ReceiptPanel extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(selectedCustomer.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                      Text(selectedCustomer.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),),
                       Text(
                         'NIF: ${selectedCustomer.vat}',
-                        style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.outline),
+                        style: TextStyle(
+                            fontSize: 12,
+                            color: Theme.of(context).colorScheme.outline,),
                       ),
                     ],
                   ),
@@ -226,7 +238,8 @@ class ReceiptPanel extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.shopping_cart_outlined, size: 64, color: Theme.of(context).colorScheme.outline),
+          Icon(Icons.shopping_cart_outlined,
+              size: 64, color: Theme.of(context).colorScheme.outline,),
           const SizedBox(height: 16),
           Text(
             'Não existem artigos adicionados',
@@ -244,7 +257,7 @@ class ReceiptPanel extends ConsumerWidget {
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withValues(alpha: 0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -273,7 +286,7 @@ class ReceiptPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
           ],
-          
+
           // Mostrar desconto de itens
           if (cart.itemsDiscount > 0) ...[
             Row(
@@ -297,17 +310,19 @@ class ReceiptPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 4),
           ],
-          
+
           // Mostrar desconto global
           if (cart.hasGlobalDiscount) ...[
             InkWell(
-              onTap: () => _showGlobalDiscountDialog(context, ref, cart.globalDiscount),
+              onTap: () =>
+                  _showGlobalDiscountDialog(context, ref, cart.globalDiscount),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
                     children: [
-                      Icon(Icons.percent, size: 14, color: Colors.green.shade700),
+                      Icon(Icons.percent,
+                          size: 14, color: Colors.green.shade700,),
                       const SizedBox(width: 4),
                       Text(
                         'Desc. ${cart.formattedGlobalDiscount}',
@@ -332,14 +347,17 @@ class ReceiptPanel extends ConsumerWidget {
             ),
             const SizedBox(height: 8),
           ],
-          
+
           // Total
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
                 'Total a pagar',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.bold),
               ),
               Text(
                 cart.formattedTotal,
@@ -434,7 +452,9 @@ class _CartItemTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: Theme.of(context).colorScheme.surface,
           borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: Theme.of(context).colorScheme.outline.withOpacity(0.2)),
+          border: Border.all(
+              color:
+                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),),
         ),
         child: Row(
           children: [
@@ -444,32 +464,39 @@ class _CartItemTile extends StatelessWidget {
                 children: [
                   Text(
                     item.name,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13,),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 2),
                   Text(
                     'Ref: ${item.product.reference}',
-                    style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                    style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).colorScheme.outline,),
                   ),
                   Row(
                     children: [
                       Text(
                         '${item.formattedQuantity} x ${item.unitPriceWithTax.toStringAsFixed(2)}€',
-                        style: TextStyle(fontSize: 11, color: Theme.of(context).colorScheme.outline),
+                        style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.outline,),
                       ),
                       if (item.discount > 0) ...[
                         const SizedBox(width: 8),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 4, vertical: 1,),
                           decoration: BoxDecoration(
                             color: Colors.orange.shade100,
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '-${item.discount.toStringAsFixed(0)}%',
-                            style: TextStyle(fontSize: 10, color: Colors.orange.shade800),
+                            style: TextStyle(
+                                fontSize: 10, color: Colors.orange.shade800,),
                           ),
                         ),
                       ],
@@ -525,7 +552,9 @@ class _SmallButton extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 8),
               backgroundColor: isActive ? Colors.green.shade50 : null,
               side: BorderSide(
-                color: isActive ? Colors.green : Theme.of(context).colorScheme.outline,
+                color: isActive
+                    ? Colors.green
+                    : Theme.of(context).colorScheme.outline,
               ),
             ),
             child: Row(
@@ -535,8 +564,8 @@ class _SmallButton extends StatelessWidget {
                 const SizedBox(width: 4),
                 Flexible(
                   child: Text(
-                    label, 
-                    textAlign: TextAlign.center, 
+                    label,
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 10,
                       color: isActive ? Colors.green.shade700 : null,
@@ -554,8 +583,10 @@ class _SmallButton extends StatelessWidget {
             right: 0,
             child: Container(
               padding: const EdgeInsets.all(4),
-              decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle),
-              child: Text('$badge', style: const TextStyle(color: Colors.white, fontSize: 10)),
+              decoration: const BoxDecoration(
+                  color: Colors.red, shape: BoxShape.circle,),
+              child: Text('$badge',
+                  style: const TextStyle(color: Colors.white, fontSize: 10),),
             ),
           ),
       ],
@@ -587,7 +618,9 @@ class _GlobalDiscountDialogState extends State<_GlobalDiscountDialog> {
   void initState() {
     super.initState();
     _controller = TextEditingController(
-      text: widget.currentDiscount > 0 ? widget.currentDiscount.toStringAsFixed(0) : '',
+      text: widget.currentDiscount > 0
+          ? widget.currentDiscount.toStringAsFixed(0)
+          : '',
     );
   }
 
@@ -621,15 +654,16 @@ class _GlobalDiscountDialogState extends State<_GlobalDiscountDialog> {
             // Campo de texto para valor personalizado
             TextField(
               controller: _controller,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              keyboardType:
+                  const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
                 FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d{0,2}')),
               ],
-              decoration: InputDecoration(
+              decoration: const InputDecoration(
                 labelText: 'Percentagem de desconto',
                 suffixText: '%',
-                border: const OutlineInputBorder(),
-                prefixIcon: const Icon(Icons.edit),
+                border: OutlineInputBorder(),
+                prefixIcon: Icon(Icons.edit),
                 helperText: 'Introduza um valor entre 0 e 100',
               ),
               autofocus: true,
@@ -641,7 +675,7 @@ class _GlobalDiscountDialogState extends State<_GlobalDiscountDialog> {
               },
             ),
             const SizedBox(height: 20),
-            
+
             // Botões de desconto rápido
             Text(
               'Descontos rápidos',
@@ -659,9 +693,12 @@ class _GlobalDiscountDialogState extends State<_GlobalDiscountDialog> {
                   child: OutlinedButton(
                     onPressed: () => _applyDiscount(discount),
                     style: OutlinedButton.styleFrom(
-                      backgroundColor: isSelected ? Colors.green.shade100 : null,
+                      backgroundColor:
+                          isSelected ? Colors.green.shade100 : null,
                       side: BorderSide(
-                        color: isSelected ? Colors.green : Theme.of(context).colorScheme.outline,
+                        color: isSelected
+                            ? Colors.green
+                            : Theme.of(context).colorScheme.outline,
                         width: isSelected ? 2 : 1,
                       ),
                       padding: EdgeInsets.zero,

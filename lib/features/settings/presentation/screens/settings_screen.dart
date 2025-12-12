@@ -61,7 +61,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       // Carregar configurações da API
       final apiUrl = await _storage.read(key: ApiConstants.keyApiUrl);
       final clientId = await _storage.read(key: ApiConstants.keyClientId);
-      final clientSecret = await _storage.read(key: ApiConstants.keyClientSecret);
+      final clientSecret =
+          await _storage.read(key: ApiConstants.keyClientSecret);
 
       // Carregar credenciais de login guardadas
       final username = await _storage.read(key: 'moloni_username');
@@ -196,6 +197,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     );
 
     if (selected != null && selected.id != _selectedCompany?.id) {
+      if (!mounted) return;
       // Mostrar diálogo de confirmação
       final confirm = await showDialog<bool>(
         context: context,
@@ -284,7 +286,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 children: [
                   const Icon(Icons.check_circle, color: Colors.white),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('Empresa alterada para: ${selected.name}')),
+                  Expanded(
+                      child: Text('Empresa alterada para: ${selected.name}'),),
                 ],
               ),
               backgroundColor: Colors.green,
@@ -410,7 +413,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             const Divider(),
                             _buildInfoRow(
                               'Estado',
-                              authState.isAuthenticated ? 'Autenticado' : 'Não autenticado',
+                              authState.isAuthenticated
+                                  ? 'Autenticado'
+                                  : 'Não autenticado',
                               icon: authState.isAuthenticated
                                   ? Icons.check_circle
                                   : Icons.cancel,
@@ -468,10 +473,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             const Divider(),
                             _buildInfoRow(
                               'Password',
-                              _savedPassword != null ? '••••••••' : 'Não guardada',
+                              _savedPassword != null
+                                  ? '••••••••'
+                                  : 'Não guardada',
                               icon: Icons.lock_outline,
                             ),
-                            if (_savedUsername != null || _savedPassword != null) ...[
+                            if (_savedUsername != null ||
+                                _savedPassword != null) ...[
                               const SizedBox(height: 12),
                               SizedBox(
                                 width: double.infinity,
@@ -488,9 +496,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                             const SizedBox(height: 8),
                             Text(
                               'As credenciais são usadas para login automático',
-                              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                color: Theme.of(context).colorScheme.outline,
-                              ),
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .bodySmall
+                                  ?.copyWith(
+                                    color:
+                                        Theme.of(context).colorScheme.outline,
+                                  ),
                             ),
                           ],
                         ),
@@ -514,8 +526,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.link),
                               ),
-                              validator: (v) =>
-                                  v?.trim().isEmpty == true ? 'Obrigatório' : null,
+                              validator: (v) => v?.trim().isEmpty == true
+                                  ? 'Obrigatório'
+                                  : null,
                             ),
                             const SizedBox(height: 16),
                             TextFormField(
@@ -525,8 +538,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 border: OutlineInputBorder(),
                                 prefixIcon: Icon(Icons.badge),
                               ),
-                              validator: (v) =>
-                                  v?.trim().isEmpty == true ? 'Obrigatório' : null,
+                              validator: (v) => v?.trim().isEmpty == true
+                                  ? 'Obrigatório'
+                                  : null,
                             ),
                             const SizedBox(height: 16),
                             TextFormField(
@@ -539,13 +553,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                 suffixIcon: IconButton(
                                   icon: Icon(_showClientSecret
                                       ? Icons.visibility_off
-                                      : Icons.visibility),
-                                  onPressed: () => setState(
-                                      () => _showClientSecret = !_showClientSecret),
+                                      : Icons.visibility,),
+                                  onPressed: () => setState(() =>
+                                      _showClientSecret = !_showClientSecret,),
                                 ),
                               ),
-                              validator: (v) =>
-                                  v?.trim().isEmpty == true ? 'Obrigatório' : null,
+                              validator: (v) => v?.trim().isEmpty == true
+                                  ? 'Obrigatório'
+                                  : null,
                             ),
                             const SizedBox(height: 16),
                             SizedBox(
@@ -562,7 +577,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                                       )
                                     : const Icon(Icons.save),
                                 label: Text(
-                                    _isSaving ? 'A guardar...' : 'Guardar API'),
+                                    _isSaving ? 'A guardar...' : 'Guardar API',),
                               ),
                             ),
                           ],
@@ -656,7 +671,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Row(
       children: [
         if (icon != null) ...[
-          Icon(icon, size: 20, color: valueColor ?? Theme.of(context).colorScheme.outline),
+          Icon(icon,
+              size: 20,
+              color: valueColor ?? Theme.of(context).colorScheme.outline,),
           const SizedBox(width: 12),
         ],
         Expanded(
@@ -746,7 +763,8 @@ class _CompanySelectionDialog extends StatelessWidget {
                 ),
               ),
               trailing: isSelected
-                  ? Icon(Icons.check, color: Theme.of(context).colorScheme.primary)
+                  ? Icon(Icons.check,
+                      color: Theme.of(context).colorScheme.primary,)
                   : null,
               selected: isSelected,
               onTap: () => Navigator.pop(context, company),
@@ -769,7 +787,8 @@ class _PrinterSettingsCard extends ConsumerStatefulWidget {
   const _PrinterSettingsCard();
 
   @override
-  ConsumerState<_PrinterSettingsCard> createState() => _PrinterSettingsCardState();
+  ConsumerState<_PrinterSettingsCard> createState() =>
+      _PrinterSettingsCardState();
 }
 
 class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
@@ -809,7 +828,9 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
             // Switch activo/inactivo
             SwitchListTile(
               title: const Text('Impressora Activa'),
-              subtitle: Text(config.isEnabled ? 'Impressão automática activa' : 'Impressão desactivada'),
+              subtitle: Text(config.isEnabled
+                  ? 'Impressão automática activa'
+                  : 'Impressão desactivada',),
               value: config.isEnabled,
               onChanged: (value) {
                 ref.read(printerProvider.notifier).setEnabled(value);
@@ -848,7 +869,9 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                     ],
                     selected: {config.connectionType},
                     onSelectionChanged: (selection) {
-                      ref.read(printerProvider.notifier).setConnectionType(selection.first);
+                      ref
+                          .read(printerProvider.notifier)
+                          .setConnectionType(selection.first);
                       _loadControllers();
                     },
                   ),
@@ -890,7 +913,9 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                     ],
                     selected: {config.paperWidth},
                     onSelectionChanged: (selection) {
-                      ref.read(printerProvider.notifier).setPaperWidth(selection.first);
+                      ref
+                          .read(printerProvider.notifier)
+                          .setPaperWidth(selection.first);
                     },
                   ),
                 ],
@@ -929,18 +954,24 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: printerState.lastTestResult!.success
-                      ? Colors.green.withOpacity(0.1)
-                      : Colors.red.withOpacity(0.1),
+                      ? Colors.green.withValues(alpha: 0.1)
+                      : Colors.red.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(
-                    color: printerState.lastTestResult!.success ? Colors.green : Colors.red,
+                    color: printerState.lastTestResult!.success
+                        ? Colors.green
+                        : Colors.red,
                   ),
                 ),
                 child: Row(
                   children: [
                     Icon(
-                      printerState.lastTestResult!.success ? Icons.check_circle : Icons.error,
-                      color: printerState.lastTestResult!.success ? Colors.green : Colors.red,
+                      printerState.lastTestResult!.success
+                          ? Icons.check_circle
+                          : Icons.error,
+                      color: printerState.lastTestResult!.success
+                          ? Colors.green
+                          : Colors.red,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -961,7 +992,8 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                   child: OutlinedButton.icon(
                     onPressed: printerState.isTesting || !config.isConfigured
                         ? null
-                        : () => ref.read(printerProvider.notifier).testConnection(),
+                        : () =>
+                            ref.read(printerProvider.notifier).testConnection(),
                     icon: printerState.isTesting
                         ? const SizedBox(
                             width: 16,
@@ -969,7 +1001,9 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.wifi_find),
-                    label: Text(printerState.isTesting ? 'A testar...' : 'Testar Conexão'),
+                    label: Text(printerState.isTesting
+                        ? 'A testar...'
+                        : 'Testar Conexão',),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -977,7 +1011,8 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                   child: ElevatedButton.icon(
                     onPressed: printerState.isPrinting || !config.isConfigured
                         ? null
-                        : () => ref.read(printerProvider.notifier).printTestPage(),
+                        : () =>
+                            ref.read(printerProvider.notifier).printTestPage(),
                     icon: printerState.isPrinting
                         ? const SizedBox(
                             width: 16,
@@ -985,7 +1020,9 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
                             child: CircularProgressIndicator(strokeWidth: 2),
                           )
                         : const Icon(Icons.print),
-                    label: Text(printerState.isPrinting ? 'A imprimir...' : 'Imprimir Teste'),
+                    label: Text(printerState.isPrinting
+                        ? 'A imprimir...'
+                        : 'Imprimir Teste',),
                   ),
                 ),
               ],
@@ -1009,7 +1046,8 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
             const Spacer(),
             IconButton(
               icon: const Icon(Icons.refresh),
-              onPressed: () => ref.read(printerProvider.notifier).refreshPrinters(),
+              onPressed: () =>
+                  ref.read(printerProvider.notifier).refreshPrinters(),
               tooltip: 'Actualizar lista',
             ),
           ],
@@ -1024,7 +1062,8 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, color: Theme.of(context).colorScheme.outline),
+                Icon(Icons.info_outline,
+                    color: Theme.of(context).colorScheme.outline,),
                 const SizedBox(width: 12),
                 const Expanded(
                   child: Text('Nenhuma impressora USB encontrada'),
@@ -1119,7 +1158,7 @@ class _ScaleSettingsCard extends StatefulWidget {
 
 class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
   final _scaleService = ScaleService();
-  
+
   bool _isLoading = true;
   bool _isTesting = false;
   bool _isEnabled = false;
@@ -1144,11 +1183,11 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
 
   Future<void> _loadConfig() async {
     setState(() => _isLoading = true);
-    
+
     try {
       await _scaleService.loadConfig();
       _refreshPorts();
-      
+
       final config = _scaleService.config;
       setState(() {
         _isEnabled = config.serialPort.isNotEmpty;
@@ -1178,9 +1217,9 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
       stopBits: 1,
       parity: 0, // None
     );
-    
+
     await _scaleService.saveConfig(config);
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -1217,14 +1256,15 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
         stopBits: 1,
         parity: 0,
       );
-      
+
       await _scaleService.saveConfig(config);
-      
+
       final reading = await _scaleService.readWeight();
-      
+
       if (reading != null) {
         setState(() {
-          _testResult = 'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}';
+          _testResult =
+              'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}';
           _testSuccess = true;
         });
       } else {
@@ -1263,9 +1303,9 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
             // Switch activo/inactivo
             SwitchListTile(
               title: const Text('Balança Activa'),
-              subtitle: Text(_isEnabled 
-                ? 'Leitura de peso activa' 
-                : 'Balança desactivada'),
+              subtitle: Text(_isEnabled
+                  ? 'Leitura de peso activa'
+                  : 'Balança desactivada',),
               value: _isEnabled,
               onChanged: (value) {
                 setState(() => _isEnabled = value);
@@ -1275,7 +1315,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                     protocol: _protocol,
                     serialPort: '',
                     baudRate: _baudRate,
-                  ));
+                  ),);
                 }
               },
               secondary: Icon(
@@ -1312,13 +1352,15 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                       Container(
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.warning_amber, 
-                              color: Theme.of(context).colorScheme.error),
+                            Icon(Icons.warning_amber,
+                                color: Theme.of(context).colorScheme.error,),
                             const SizedBox(width: 12),
                             const Expanded(
                               child: Text(
@@ -1343,9 +1385,9 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                           return DropdownMenuItem(
                             value: port,
                             child: Text(
-                              description.isNotEmpty 
-                                ? '$port ($description)'
-                                : port,
+                              description.isNotEmpty
+                                  ? '$port ($description)'
+                                  : port,
                             ),
                           );
                         }).toList(),
@@ -1444,8 +1486,8 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: _testSuccess == true
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.red.withOpacity(0.1),
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.red.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: _testSuccess == true ? Colors.green : Colors.red,
@@ -1478,7 +1520,8 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.wifi_find),
-                      label: Text(_isTesting ? 'A testar...' : 'Testar Leitura'),
+                      label:
+                          Text(_isTesting ? 'A testar...' : 'Testar Leitura'),
                     ),
                   ),
                   const SizedBox(width: 12),

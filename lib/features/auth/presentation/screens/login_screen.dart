@@ -24,30 +24,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     // === LISTENER — tem de ficar no build ===
     ref.listen<AuthState>(authProvider, (previous, next) {
-      Future.microtask(() {
+      // Login OK → navegar
+      if (next.isAuthenticated && !next.isLoading) {
         if (!mounted) return;
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (_) => const CompanySelectionScreen(),
+          ),
+        );
+      }
 
-        // Login OK → navegar
-        if (next.isAuthenticated && !next.isLoading) {
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (_) => const CompanySelectionScreen(),
-            ),
-          );
-        }
-
-        // Erro → snackbar
-        if (next.error != null && !next.isLoading) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.error!),
-              backgroundColor: Colors.red,
-            ),
-          );
-
-          ref.read(authProvider.notifier).clearError();
-        }
-      });
+      // Erro → snackbar
+      if (next.error != null && !next.isLoading) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(next.error!),
+            backgroundColor: Colors.red,
+          ),
+        );
+        ref.read(authProvider.notifier).clearError();
+      }
     });
 
     // === UI ===

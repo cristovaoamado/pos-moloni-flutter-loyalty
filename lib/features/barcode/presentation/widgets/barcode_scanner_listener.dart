@@ -72,9 +72,9 @@ class _BarcodeScannerListenerState
   }
 }
 
-/// Widget alternativo usando RawKeyboardListener (para compatibilidade)
-class BarcodeScannerRawListener extends ConsumerStatefulWidget {
-  const BarcodeScannerRawListener({
+/// Widget alternativo usando Focus com onKeyEvent (API moderna)
+class BarcodeScannerFocusListener extends ConsumerStatefulWidget {
+  const BarcodeScannerFocusListener({
     super.key,
     required this.child,
     this.enabled = true,
@@ -84,12 +84,12 @@ class BarcodeScannerRawListener extends ConsumerStatefulWidget {
   final bool enabled;
 
   @override
-  ConsumerState<BarcodeScannerRawListener> createState() =>
-      _BarcodeScannerRawListenerState();
+  ConsumerState<BarcodeScannerFocusListener> createState() =>
+      _BarcodeScannerFocusListenerState();
 }
 
-class _BarcodeScannerRawListenerState
-    extends ConsumerState<BarcodeScannerRawListener> {
+class _BarcodeScannerFocusListenerState
+    extends ConsumerState<BarcodeScannerFocusListener> {
   final FocusNode _focusNode = FocusNode();
 
   @override
@@ -108,21 +108,15 @@ class _BarcodeScannerRawListenerState
     super.dispose();
   }
 
-  void _handleKeyEvent(RawKeyEvent event) {
-    if (event is! RawKeyDownEvent) return;
-    
-    // Converter para KeyEvent compatível
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    // Só processa eventos de key down
+    if (event is! KeyDownEvent) return KeyEventResult.ignored;
+
     final service = ref.read(barcodeScannerServiceProvider);
-    
-    // Criar um KeyDownEvent a partir do RawKeyEvent
-    final keyEvent = KeyDownEvent(
-      physicalKey: event.physicalKey,
-      logicalKey: event.logicalKey,
-      character: event.character,
-      timeStamp: Duration(milliseconds: DateTime.now().millisecondsSinceEpoch),
-    );
-    
-    service.handleKeyEvent(keyEvent);
+    service.handleKeyEvent(event);
+
+    // Retorna ignored para permitir que outros widgets também processem
+    return KeyEventResult.ignored;
   }
 
   @override
@@ -131,11 +125,10 @@ class _BarcodeScannerRawListenerState
       return widget.child;
     }
 
-    // ignore: deprecated_member_use
-    return RawKeyboardListener(
+    return Focus(
       focusNode: _focusNode,
       autofocus: true,
-      onKey: _handleKeyEvent,
+      onKeyEvent: _handleKeyEvent,
       child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: () {

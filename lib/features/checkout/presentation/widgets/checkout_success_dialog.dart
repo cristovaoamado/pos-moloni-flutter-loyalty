@@ -21,7 +21,8 @@ class CheckoutSuccessDialog extends ConsumerStatefulWidget {
   final VoidCallback onClose;
 
   @override
-  ConsumerState<CheckoutSuccessDialog> createState() => _CheckoutSuccessDialogState();
+  ConsumerState<CheckoutSuccessDialog> createState() =>
+      _CheckoutSuccessDialogState();
 }
 
 class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
@@ -43,8 +44,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
   void _checkAutoPrint() {
     final printerState = ref.read(printerProvider);
     final checkoutState = ref.read(checkoutProvider);
-    
-    if (printerState.config.isEnabled && 
+
+    if (printerState.config.isEnabled &&
         printerState.config.autoPrint &&
         checkoutState.pdfBytes != null) {
       AppLogger.i('🖨️ Auto-print activado, a imprimir...');
@@ -56,7 +57,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
   Future<void> _printDocument() async {
     final checkoutState = ref.read(checkoutProvider);
     final printerState = ref.read(printerProvider);
-    
+
     if (checkoutState.pdfBytes == null) {
       setState(() {
         _printMessage = 'PDF não disponível';
@@ -72,31 +73,34 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
 
     try {
       bool success = false;
-      
+
       // Verificar se há impressora configurada
       if (printerState.config.isEnabled && printerState.config.isConfigured) {
         // Imprimir directamente na impressora configurada (silencioso)
-        AppLogger.i('🖨️ Imprimindo directamente em: ${printerState.config.name}');
-        
+        AppLogger.i(
+            '🖨️ Imprimindo directamente em: ${printerState.config.name}',);
+
         success = await PrintService.printDirectToConfiguredPrinter(
           checkoutState.pdfBytes!,
           printerState.config.name,
           documentName: widget.document.number,
         );
-        
+
         if (success) {
           setState(() {
-            _printMessage = 'Documento enviado para ${printerState.config.name}';
+            _printMessage =
+                'Documento enviado para ${printerState.config.name}';
             _printSuccess = true;
           });
         } else {
           // Se falhar na impressora configurada, tentar com diálogo
-          AppLogger.w('⚠️ Falhou na impressora configurada, a abrir diálogo...');
+          AppLogger.w(
+              '⚠️ Falhou na impressora configurada, a abrir diálogo...',);
           success = await PrintService.printPdfWithDialog(
             checkoutState.pdfBytes!,
             documentName: widget.document.number,
           );
-          
+
           if (success) {
             setState(() {
               _printMessage = 'Documento impresso';
@@ -111,7 +115,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
           checkoutState.pdfBytes!,
           documentName: widget.document.number,
         );
-        
+
         if (success) {
           setState(() {
             _printMessage = 'Documento impresso';
@@ -143,7 +147,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
 
   Future<void> _openPdf() async {
     final checkoutState = ref.read(checkoutProvider);
-    
+
     if (checkoutState.pdfBytes == null) {
       setState(() {
         _printMessage = 'PDF não disponível';
@@ -182,7 +186,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     final checkoutState = ref.watch(checkoutProvider);
     final printerState = ref.watch(printerProvider);
     final hasPdf = checkoutState.pdfBytes != null;
-    final hasPrinterConfigured = printerState.config.isEnabled && printerState.config.isConfigured;
+    final hasPrinterConfigured =
+        printerState.config.isEnabled && printerState.config.isConfigured;
 
     return Dialog(
       child: Container(
@@ -239,7 +244,9 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Column(
@@ -304,7 +311,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                     if (hasPrinterConfigured) ...[
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 8,),
                         decoration: BoxDecoration(
                           color: Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(6),
@@ -312,7 +320,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.print, size: 16, color: Colors.blue.shade700),
+                            Icon(Icons.print,
+                                size: 16, color: Colors.blue.shade700,),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -326,7 +335,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                             ),
                             if (printerState.config.autoPrint)
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 6, vertical: 2,),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.shade700,
                                   borderRadius: BorderRadius.circular(4),
@@ -352,7 +362,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                         // Botão de imprimir
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed: hasPdf && !_isPrinting ? _printDocument : null,
+                            onPressed:
+                                hasPdf && !_isPrinting ? _printDocument : null,
                             icon: _isPrinting
                                 ? const SizedBox(
                                     width: 18,
@@ -363,13 +374,14 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                                     ),
                                   )
                                 : const Icon(Icons.print),
-                            label: Text(_isPrinting 
-                                ? 'A imprimir...' 
-                                : hasPrinterConfigured 
-                                    ? 'Imprimir' 
-                                    : 'Imprimir...'),
+                            label: Text(_isPrinting
+                                ? 'A imprimir...'
+                                : hasPrinterConfigured
+                                    ? 'Imprimir'
+                                    : 'Imprimir...',),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor: Theme.of(context).colorScheme.primary,
+                              backgroundColor:
+                                  Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
@@ -384,7 +396,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                                 ? const SizedBox(
                                     width: 18,
                                     height: 18,
-                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2,),
                                   )
                                 : const Icon(Icons.visibility),
                             label: Text(_isOpening ? 'A abrir...' : 'Ver PDF'),
@@ -425,23 +438,25 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _printSuccess 
-                              ? Colors.green.shade50 
+                          color: _printSuccess
+                              ? Colors.green.shade50
                               : Colors.orange.shade50,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: _printSuccess 
-                                ? Colors.green.shade200 
+                            color: _printSuccess
+                                ? Colors.green.shade200
                                 : Colors.orange.shade200,
                           ),
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              _printSuccess ? Icons.check_circle : Icons.warning_amber, 
-                              color: _printSuccess 
-                                  ? Colors.green.shade700 
-                                  : Colors.orange.shade700, 
+                              _printSuccess
+                                  ? Icons.check_circle
+                                  : Icons.warning_amber,
+                              color: _printSuccess
+                                  ? Colors.green.shade700
+                                  : Colors.orange.shade700,
                               size: 18,
                             ),
                             const SizedBox(width: 8),
@@ -449,8 +464,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                               child: Text(
                                 _printMessage!,
                                 style: TextStyle(
-                                  color: _printSuccess 
-                                      ? Colors.green.shade700 
+                                  color: _printSuccess
+                                      ? Colors.green.shade700
                                       : Colors.orange.shade700,
                                   fontSize: 12,
                                 ),
@@ -503,7 +518,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: (color ?? Theme.of(context).colorScheme.primary).withOpacity(0.1),
+        color: (color ?? Theme.of(context).colorScheme.primary)
+            .withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(

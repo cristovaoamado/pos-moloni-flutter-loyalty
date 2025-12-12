@@ -109,7 +109,7 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
         options.add(DocumentTypeOption(
           documentSet: defaultSet,
           documentType: docType,
-        ));
+        ),);
         AppLogger.d('   ✓ Adicionado: ${docType.name} - ${defaultSet.name}');
       }
       
@@ -124,7 +124,7 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
           options.add(DocumentTypeOption(
             documentSet: docSet,
             documentType: docType,
-          ));
+          ),);
           AppLogger.d('   ✓ Adicionado: ${docType.name} - ${docSet.name}');
         }
       }

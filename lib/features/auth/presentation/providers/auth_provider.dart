@@ -23,7 +23,6 @@ final dioProvider = Provider<Dio>((ref) {
 
 /// Provider do FlutterSecureStorage (usando PlatformStorage para compatibilidade desktop)
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  // Usa o PlatformStorage que funciona em todas as plataformas
   return PlatformStorage.instance;
 });
 
@@ -71,36 +70,47 @@ final refreshTokenUseCaseProvider = Provider<RefreshTokenUseCase>((ref) {
 
 /// Estado de autenticação
 class AuthState {
-
   const AuthState({
     this.user,
     this.isLoading = false,
     this.error,
     this.isAuthenticated = false,
+    this.requiresLogin = false,
+    this.isRecovering = false,
   });
+
   final User? user;
   final bool isLoading;
   final String? error;
   final bool isAuthenticated;
+  
+  /// Flag que indica que precisa de login manual (todas as tentativas falharam)
+  final bool requiresLogin;
+  
+  /// Flag que indica que está a tentar recuperar sessão
+  final bool isRecovering;
 
   AuthState copyWith({
     User? user,
     bool? isLoading,
     String? error,
     bool? isAuthenticated,
+    bool? requiresLogin,
+    bool? isRecovering,
   }) {
     return AuthState(
       user: user ?? this.user,
       isLoading: isLoading ?? this.isLoading,
       error: error,
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      requiresLogin: requiresLogin ?? this.requiresLogin,
+      isRecovering: isRecovering ?? this.isRecovering,
     );
   }
 }
 
 /// Notifier para gestão do estado de autenticação
 class AuthNotifier extends StateNotifier<AuthState> {
-
   AuthNotifier({
     required this.loginUseCase,
     required this.logoutUseCase,
@@ -121,22 +131,20 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
   /// Inicializa e tenta auto-login
   Future<void> initialize() async {
-    AppLogger.i('Inicializando autenticacao...');
-    // Usar Future.microtask para garantir que o provider esta pronto
+    AppLogger.i('🔐 Inicializando autenticação...');
     await Future.microtask(() {});
     await _checkAutoLogin();
   }
 
   /// Verifica se existe sessão válida (auto-login)
   Future<void> _checkAutoLogin() async {
-    AppLogger.i('Verificando auto-login...');
+    AppLogger.i('🔍 Verificando auto-login...');
 
-    // Verificar se o notifier ainda esta montado antes de actualizar estado
     if (!mounted) return;
     
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isLoading: true, requiresLogin: false);
 
-    // Primeiro, verificar se há token válido
+    // 1. Verificar se há token válido
     final hasValidTokenResult = await authRepository.hasValidToken();
 
     final hasValidToken = hasValidTokenResult.fold(
@@ -148,7 +156,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
     );
 
     if (hasValidToken) {
-      // Token válido - obter utilizador
       final userResult = await authRepository.getCurrentUser();
       
       userResult.fold(
@@ -159,12 +166,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
           }
         },
         (user) {
-          AppLogger.i('Auto-login bem-sucedido (token valido)');
+          AppLogger.i('✅ Auto-login bem-sucedido (token válido)');
           if (mounted) {
             state = state.copyWith(
               user: user,
               isLoading: false,
               isAuthenticated: true,
+              requiresLogin: false,
             );
           }
         },
@@ -172,28 +180,92 @@ class AuthNotifier extends StateNotifier<AuthState> {
       return;
     }
 
-    // Token inválido ou expirado - tentar com credenciais guardadas
-    AppLogger.d('Token invalido, tentando credenciais guardadas...');
+    // 2. Token inválido/expirado - tentar refresh
+    AppLogger.d('🔄 Token inválido, tentando refresh...');
+    final refreshSuccess = await _tryRefreshToken();
+    
+    if (refreshSuccess) {
+      AppLogger.i('✅ Auto-login bem-sucedido (refresh token)');
+      return;
+    }
+
+    // 3. Refresh falhou - tentar com credenciais guardadas
+    AppLogger.d('🔄 Refresh falhou, tentando credenciais guardadas...');
     
     final username = await storage.read(key: _keyUsername);
     final password = await storage.read(key: _keyPassword);
 
     if (username != null && username.isNotEmpty && 
         password != null && password.isNotEmpty) {
-      AppLogger.d('Credenciais encontradas, tentando login...');
+      AppLogger.d('🔑 Credenciais encontradas, tentando login...');
       
-      final success = await _doLogin(username: username, password: password, saveCredentials: false);
+      final success = await _doLogin(
+        username: username, 
+        password: password, 
+        saveCredentials: false,
+      );
       
       if (success) {
-        AppLogger.i('Auto-login bem-sucedido (credenciais guardadas)');
+        AppLogger.i('✅ Auto-login bem-sucedido (credenciais guardadas)');
         return;
       }
     }
 
-    // Sem credenciais ou login falhou
-    AppLogger.d('Auto-login falhou - requer login manual');
+    // 4. Todas as tentativas falharam - requer login manual
+    AppLogger.w('⚠️ Auto-login falhou - requer login manual');
     if (mounted) {
-      state = state.copyWith(isLoading: false, isAuthenticated: false);
+      state = state.copyWith(
+        isLoading: false, 
+        isAuthenticated: false,
+        requiresLogin: true,
+      );
+    }
+  }
+
+  /// Tenta renovar o token usando refresh_token
+  Future<bool> _tryRefreshToken() async {
+    try {
+      final result = await refreshTokenUseCase();
+
+      return result.fold(
+        (failure) {
+          AppLogger.w('❌ Refresh token falhou: ${failure.message}');
+          return false;
+        },
+        (tokens) async {
+          AppLogger.i('✅ Token renovado via refresh');
+          
+          final userResult = await authRepository.getCurrentUser();
+          
+          userResult.fold(
+            (failure) {
+              if (mounted) {
+                state = state.copyWith(
+                  isLoading: false,
+                  isRecovering: false,
+                  isAuthenticated: true,
+                );
+              }
+            },
+            (user) {
+              if (mounted) {
+                state = state.copyWith(
+                  user: user,
+                  isLoading: false,
+                  isRecovering: false,
+                  isAuthenticated: true,
+                  requiresLogin: false,
+                );
+              }
+            },
+          );
+          
+          return true;
+        },
+      );
+    } catch (e) {
+      AppLogger.e('❌ Erro ao fazer refresh token', error: e);
+      return false;
     }
   }
 
@@ -204,7 +276,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     bool saveCredentials = true,
   }) async {
     AppLogger.i('🔐 Tentando login...');
-    state = state.copyWith(isLoading: true, error: null);
+    state = state.copyWith(isLoading: true, error: null, requiresLogin: false);
     
     return _doLogin(
       username: username, 
@@ -237,14 +309,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
       (tokens) async {
         AppLogger.i('✅ Login bem-sucedido');
 
-        // Guardar credenciais se solicitado
         if (saveCredentials) {
           await storage.write(key: _keyUsername, value: username);
           await storage.write(key: _keyPassword, value: password);
           AppLogger.d('💾 Credenciais guardadas');
         }
 
-        // Obter utilizador
         final userResult = await authRepository.getCurrentUser();
 
         userResult.fold(
@@ -261,6 +331,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
               isLoading: false,
               error: null,
               isAuthenticated: true,
+              requiresLogin: false,
             );
           },
         );
@@ -276,7 +347,6 @@ class AuthNotifier extends StateNotifier<AuthState> {
 
     state = state.copyWith(isLoading: true);
 
-    // Limpar credenciais se solicitado
     if (clearCredentials) {
       await storage.delete(key: _keyUsername);
       await storage.delete(key: _keyPassword);
@@ -292,12 +362,97 @@ class AuthNotifier extends StateNotifier<AuthState> {
       },
       (_) {
         AppLogger.i('✅ Logout bem-sucedido');
-        state = const AuthState(isLoading: false, isAuthenticated: false);
+        state = const AuthState(
+          isLoading: false, 
+          isAuthenticated: false,
+          requiresLogin: true,
+        );
       },
     );
   }
 
-  /// Refresh token
+  /// Tenta recuperar sessão expirada
+  /// Chamado quando detecta erro de token expirado nas chamadas API
+  /// Retorna true se conseguiu recuperar, false se precisa de login manual
+  Future<bool> tryRecoverSession() async {
+    AppLogger.i('🔄 Tentando recuperar sessão...');
+    
+    if (state.isRecovering) {
+      AppLogger.d('Já está a recuperar sessão, ignorando...');
+      return false;
+    }
+
+    if (!mounted) return false;
+    
+    state = state.copyWith(isRecovering: true, error: null);
+
+    // 1. Tentar refresh token
+    AppLogger.d('🔄 Tentativa 1: Refresh token...');
+    final refreshSuccess = await _tryRefreshToken();
+    if (refreshSuccess) {
+      if (mounted) {
+        state = state.copyWith(isRecovering: false);
+      }
+      return true;
+    }
+
+    // 2. Tentar re-login com credenciais guardadas
+    AppLogger.d('🔄 Tentativa 2: Re-login com credenciais guardadas...');
+    final username = await storage.read(key: _keyUsername);
+    final password = await storage.read(key: _keyPassword);
+
+    if (username != null && username.isNotEmpty &&
+        password != null && password.isNotEmpty) {
+      
+      final loginResult = await loginUseCase(
+        username: username,
+        password: password,
+      );
+      
+      final loginSuccess = loginResult.fold(
+        (failure) {
+          AppLogger.w('❌ Re-login falhou: ${failure.message}');
+          return false;
+        },
+        (tokens) {
+          AppLogger.i('✅ Re-login bem-sucedido');
+          return true;
+        },
+      );
+      
+      if (loginSuccess) {
+        final userResult = await authRepository.getCurrentUser();
+        userResult.fold(
+          (failure) {},
+          (user) {
+            if (mounted) {
+              state = state.copyWith(
+                user: user,
+                isRecovering: false,
+                isAuthenticated: true,
+                requiresLogin: false,
+              );
+            }
+          },
+        );
+        return true;
+      }
+    }
+
+    // 3. Falha total
+    AppLogger.w('⚠️ Recuperação de sessão falhou - requer login manual');
+    if (mounted) {
+      state = state.copyWith(
+        isRecovering: false,
+        requiresLogin: true,
+        isAuthenticated: false,
+        error: 'Não foi possível recuperar a sessão. Por favor, faça login.',
+      );
+    }
+    return false;
+  }
+
+  /// Refresh token (público)
   Future<bool> refreshToken() async {
     AppLogger.i('🔄 Refreshing token...');
 
@@ -307,10 +462,9 @@ class AuthNotifier extends StateNotifier<AuthState> {
       (failure) {
         AppLogger.e('❌ Erro ao fazer refresh: ${failure.message}');
         
-        // Se token expirou, fazer logout
         if (failure.message.contains('expirou') ||
             failure.message.contains('expired')) {
-          state = const AuthState(isAuthenticated: false);
+          state = const AuthState(isAuthenticated: false, requiresLogin: true);
         }
         
         return false;
@@ -355,4 +509,14 @@ final isAuthenticatedProvider = Provider<bool>((ref) {
 /// Provider conveniente para obter utilizador atual
 final currentUserProvider = Provider<User?>((ref) {
   return ref.watch(authProvider).user;
+});
+
+/// Provider que indica se precisa de login manual
+final requiresLoginProvider = Provider<bool>((ref) {
+  return ref.watch(authProvider).requiresLogin;
+});
+
+/// Provider que indica se está a recuperar sessão
+final isRecoveringSessionProvider = Provider<bool>((ref) {
+  return ref.watch(authProvider).isRecovering;
 });

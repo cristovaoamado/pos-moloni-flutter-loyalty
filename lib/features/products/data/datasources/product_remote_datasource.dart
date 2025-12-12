@@ -243,7 +243,7 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       AppLogger.moloniApi('products/getByEAN', data: {
         'company_id': companyId,
         'ean': barcode,
-      });
+      },);
 
       final response = await dio.post(
         url,

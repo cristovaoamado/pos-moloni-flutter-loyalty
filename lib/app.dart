@@ -6,51 +6,31 @@ import 'package:pos_moloni_app/core/theme/app_theme.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/auth/presentation/providers/auth_provider.dart';
 import 'package:pos_moloni_app/features/auth/presentation/screens/login_screen.dart';
-import 'package:pos_moloni_app/features/company/presentation/providers/company_data_provider.dart';
 import 'package:pos_moloni_app/features/company/presentation/providers/company_provider.dart';
 import 'package:pos_moloni_app/features/company/presentation/screens/company_selection_screen.dart';
 import 'package:pos_moloni_app/features/pos/presentation/screens/pos_screen.dart';
 
-class MyApp extends ConsumerStatefulWidget {
+class MyApp extends ConsumerWidget {
   const MyApp({super.key});
 
   @override
-  ConsumerState<MyApp> createState() => _MyAppState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    AppLogger.i('🎨 Building MyApp');
 
-class _MyAppState extends ConsumerState<MyApp> {
-  bool _initialized = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Usar addPostFrameCallback para garantir que o widget esta montado
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeAuth();
-    });
-  }
-
-  Future<void> _initializeAuth() async {
-    AppLogger.i('Iniciando verificacao de autenticacao...');
-    
-    // Inicializar autenticação (verifica token/credenciais guardadas)
-    await ref.read(authProvider.notifier).initialize();
-    
-    if (mounted) {
-      setState(() => _initialized = true);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    AppLogger.d('Building MyApp (initialized: $_initialized)');
+    // Observar estado de autenticação
+    final authState = ref.watch(authProvider);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: AppConstants.appName,
       theme: AppTheme.lightTheme,
-      home: _buildHome(),
+
+      // Navegação baseada em estado de autenticação
+      home: _buildHome(authState),
+
+      // Builder para capturar contexto global (útil para SnackBars, Dialogs)
       builder: (context, child) {
+        // Prevenir que o texto escale além do normal (acessibilidade)
         return MediaQuery(
           data: MediaQuery.of(context).copyWith(
             textScaler: TextScaler.noScaling,
@@ -61,97 +41,78 @@ class _MyAppState extends ConsumerState<MyApp> {
     );
   }
 
-  Widget _buildHome() {
-    // Se ainda não inicializou, mostrar splash
-    if (!_initialized) {
+  Widget _buildHome(AuthState authState) {
+    // Se estiver carregando (verificando auto-login)
+    if (authState.isLoading && !authState.isAuthenticated) {
       return const _SplashScreen();
     }
 
-    // Observar estado de autenticação
-    final authState = ref.watch(authProvider);
-
-    // Se está a carregar (após inicialização), mostrar splash
-    if (authState.isLoading) {
-      return const _SplashScreen();
-    }
-
-    // Se autenticado, verificar empresa
+    // Se autenticado
     if (authState.isAuthenticated) {
+      // Verificar se tem empresa selecionada
       return const _AuthenticatedFlow();
     }
 
-    // Se não autenticado, mostrar login
+    // Se não autenticado, mostrar tela de login
     return const LoginScreen();
   }
 }
 
-/// Tela de splash (loading inicial)
+/// Tela de splash (loading inicial) - COM LOGO
 class _SplashScreen extends StatelessWidget {
   const _SplashScreen();
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary,
-              Theme.of(context).colorScheme.primaryContainer,
-            ],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo
-              Container(
-                width: 120,
-                height: 120,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Icon(
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // ═══════════════════════════════════════════════════════════════
+            // LOGO DA EMPRESA (em vez do ícone)
+            // ═══════════════════════════════════════════════════════════════
+            Image.asset(
+              'assets/img/logo.png',
+              height: 150,  // Tamanho grande para o splash
+              fit: BoxFit.contain,
+              errorBuilder: (context, error, stackTrace) {
+                // Fallback para ícone se o logo não carregar
+                return Icon(
                   Icons.point_of_sale_rounded,
-                  size: 64,
+                  size: 100,
                   color: Theme.of(context).colorScheme.primary,
-                ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            Text(
+              AppConstants.appName,
+              style: Theme.of(context).textTheme.headlineLarge?.copyWith(
+                color: Theme.of(context).colorScheme.primary,
+                fontWeight: FontWeight.bold,
               ),
-              const SizedBox(height: 32),
-              Text(
-                AppConstants.appName,
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'POS Moloni',
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                color: Theme.of(context).colorScheme.secondary,
               ),
-              const SizedBox(height: 48),
-              const SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  strokeWidth: 3,
-                ),
+            ),
+            const SizedBox(height: 48),
+            CircularProgressIndicator(
+              color: Theme.of(context).colorScheme.primary,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'A carregar...',
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'A verificar sessão...',
-                style: TextStyle(color: Colors.white70),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -159,135 +120,21 @@ class _SplashScreen extends StatelessWidget {
 }
 
 /// Fluxo quando autenticado (verifica empresa)
-class _AuthenticatedFlow extends ConsumerStatefulWidget {
+class _AuthenticatedFlow extends ConsumerWidget {
   const _AuthenticatedFlow();
 
   @override
-  ConsumerState<_AuthenticatedFlow> createState() => _AuthenticatedFlowState();
-}
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Observar o estado completo para reagir a mudanças
+    final companyState = ref.watch(companyProvider);
+    final hasSelectedCompany = companyState.selectedCompany != null;
 
-class _AuthenticatedFlowState extends ConsumerState<_AuthenticatedFlow> {
-  bool _initialized = false;
-  bool _hasCompany = false;
-
-  @override
-  void initState() {
-    super.initState();
-    // Usar addPostFrameCallback para garantir que o widget esta montado
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initialize();
-    });
-  }
-
-  Future<void> _initialize() async {
-    AppLogger.d('A verificar empresa na storage...');
-    
-    // 1. Carregar empresa da storage
-    await ref.read(companyProvider.notifier).loadSelectedCompany();
-    
-    // 2. Verificar se tem empresa
-    final company = ref.read(companyProvider).selectedCompany;
-    
-    if (company != null) {
-      AppLogger.i('Empresa encontrada: ${company.name}');
-      
-      // 3. Carregar dados da empresa
-      await ref.read(companyDataProvider.notifier).loadCompanyData(company);
-      
-      if (mounted) {
-        setState(() {
-          _hasCompany = true;
-          _initialized = true;
-        });
-      }
-    } else {
-      AppLogger.i('Nenhuma empresa seleccionada');
-      if (mounted) {
-        setState(() {
-          _hasCompany = false;
-          _initialized = true;
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Aguardar inicializacao
-    if (!_initialized) {
-      return const _LoadingCompanyDataScreen();
-    }
-
-    // Se tem empresa, ir para POS
-    if (_hasCompany) {
+    // Se já tem empresa selecionada, ir para POS
+    if (hasSelectedCompany) {
       return const PosScreen();
     }
 
-    // Se nao tem empresa, mostrar seleccao
+    // Se não tem empresa, mostrar seleção
     return const CompanySelectionScreen();
-  }
-}
-
-/// Tela de loading enquanto carrega dados da empresa
-class _LoadingCompanyDataScreen extends StatelessWidget {
-  const _LoadingCompanyDataScreen();
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Theme.of(context).colorScheme.primary,
-              Theme.of(context).colorScheme.primaryContainer,
-            ],
-          ),
-        ),
-        child: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                width: 100,
-                height: 100,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(20),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.2),
-                      blurRadius: 20,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Icon(
-                  Icons.business,
-                  size: 48,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-              ),
-              const SizedBox(height: 32),
-              const SizedBox(
-                width: 32,
-                height: 32,
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                  strokeWidth: 3,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'A carregar dados da empresa...',
-                style: TextStyle(color: Colors.white70, fontSize: 16),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
   }
 }

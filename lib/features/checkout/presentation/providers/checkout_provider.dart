@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:pos_moloni_app/core/services/storage_service.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';

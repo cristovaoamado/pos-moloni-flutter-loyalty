@@ -1,5 +1,4 @@
-import 'dart:typed_data';
-
+import 'package:flutter/services.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:pdf/pdf.dart';
@@ -35,17 +34,6 @@ import 'package:pos_moloni_app/features/checkout/domain/entities/document.dart';
 
 /// Dados da empresa para o talão
 class CompanyReceiptData {
-  final String name;
-  final String businessName;
-  final String vat;
-  final String address;
-  final String zipCode;
-  final String city;
-  final String country;
-  final String? phone;
-  final String? email;
-  final String? imageUrl;
-  Uint8List? imageBytes;
 
   CompanyReceiptData({
     required this.name,
@@ -60,6 +48,17 @@ class CompanyReceiptData {
     this.imageUrl,
     this.imageBytes,
   });
+  final String name;
+  final String businessName;
+  final String vat;
+  final String address;
+  final String zipCode;
+  final String city;
+  final String country;
+  final String? phone;
+  final String? email;
+  final String? imageUrl;
+  Uint8List? imageBytes;
 
   bool get hasImage => imageUrl != null && imageUrl!.isNotEmpty;
 
@@ -135,13 +134,6 @@ class CompanyReceiptData {
 
 /// Configurações do talão
 class ReceiptConfig {
-  final double paperWidthMm;
-  final double marginMm;
-  final bool showLogo;
-  final String? terminalName;
-  final String? operatorName;
-  final String footerText;
-  final String programCertification;
 
   const ReceiptConfig({
     this.paperWidthMm = 80,
@@ -152,6 +144,13 @@ class ReceiptConfig {
     this.footerText = 'Obrigado pela preferência.',
     this.programCertification = 'Processado por programa certificado N 2860/AT',
   });
+  final double paperWidthMm;
+  final double marginMm;
+  final bool showLogo;
+  final String? terminalName;
+  final String? operatorName;
+  final String footerText;
+  final String programCertification;
 
   static const ReceiptConfig paper58mm = ReceiptConfig(paperWidthMm: 58, marginMm: 2);
   static const ReceiptConfig paper80mm = ReceiptConfig(paperWidthMm: 80, marginMm: 3);
@@ -165,17 +164,15 @@ class ReceiptConfig {
 
 /// Resumo de IVA por taxa (agrupa valores da API)
 class _TaxSummary {
-  final String name;
-  final double rate;
-  double incidenceValue; // Soma dos incidence_value (base tributável)
-  double taxValue;       // Soma dos total_value (valor do imposto)
-
   _TaxSummary({
     required this.name, 
     required this.rate,
-    this.incidenceValue = 0,
-    this.taxValue = 0,
   });
+  
+  final String name;
+  final double rate;
+  double incidenceValue = 0; // Soma dos incidence_value (base tributável)
+  double taxValue = 0;       // Soma dos total_value (valor do imposto)
 
   String get displayName {
     if (rate <= 6) return 'IVA Reduzido';
@@ -185,18 +182,31 @@ class _TaxSummary {
   }
 }
 
+/// Resumo de desconto por produto
+class _ProductDiscountInfo {
+  _ProductDiscountInfo({
+    required this.productName,
+    required this.discountPercentage,
+    required this.discountValue,
+  });
+  
+  final String productName;
+  final double discountPercentage;
+  final double discountValue;
+}
+
 /// Gerador de talões POS - Formato Moloni
 /// 
 /// IMPORTANTE: Este gerador usa EXCLUSIVAMENTE os valores retornados pela 
 /// API Moloni (getOne). Não faz cálculos locais.
 class ReceiptGenerator {
-  final CompanyReceiptData? companyData;
-  final ReceiptConfig config;
 
   ReceiptGenerator({
     this.companyData,
     this.config = const ReceiptConfig(),
   });
+  final CompanyReceiptData? companyData;
+  final ReceiptConfig config;
 
   /// Gera um talão PDF a partir do documento Moloni
   Future<Uint8List> generateFromDocument({
@@ -231,6 +241,12 @@ class ReceiptGenerator {
 
     final pdf = pw.Document();
 
+    // Carregar fonte com suporte a símbolos (€)
+    final fontData = await rootBundle.load('assets/fonts/Roboto-Regular.ttf');
+    final fontBoldData = await rootBundle.load('assets/fonts/Roboto-Bold.ttf');
+    final ttf = pw.Font.ttf(fontData);
+    final ttfBold = pw.Font.ttf(fontBoldData);
+
     // Dados da empresa (preferir dados do documento, fallback para storage)
     final companyName = _firstNonEmpty([
       document.companyName,
@@ -251,15 +267,23 @@ class ReceiptGenerator {
 
     // Agrupar impostos por taxa (usando valores da API)
     final taxSummaries = _groupTaxesByRate(document.products);
+    
+    // Calcular descontos por produto
+    final productDiscounts = _calculateProductDiscounts(document.products);
+    
+    // Calcular valor bruto total (antes de descontos)
+    final grossBeforeDiscounts = _calculateGrossBeforeDiscounts(document.products);
 
-    // Estilos
-    final titleStyle = pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold);
-    final headerStyle = pw.TextStyle(fontSize: 9, fontWeight: pw.FontWeight.bold);
-    final normalStyle = const pw.TextStyle(fontSize: 8);
-    final smallStyle = const pw.TextStyle(fontSize: 7);
-    final tinyStyle = const pw.TextStyle(fontSize: 6);
-    final discountStyle = pw.TextStyle(fontSize: 7, color: PdfColors.green800);
-    final totalStyle = pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold);
+    // Estilos (com fonte TTF para suporte ao símbolo €)
+    final headerStyle = pw.TextStyle(font: ttfBold, fontSize: 9, fontWeight: pw.FontWeight.bold);
+    final normalStyle = pw.TextStyle(font: ttf, fontSize: 8);
+    final smallStyle = pw.TextStyle(font: ttf, fontSize: 7);
+    final tinyStyle = pw.TextStyle(font: ttf, fontSize: 6);
+    final discountStyle = pw.TextStyle(font: ttf, fontSize: 7, color: PdfColors.green800);
+    final discountTinyStyle = pw.TextStyle(font: ttf, fontSize: 6, color: PdfColors.green800);
+    final discountHeaderStyle = pw.TextStyle(font: ttfBold, fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800);
+    final discountTotalStyle = pw.TextStyle(font: ttfBold, fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800);
+    final totalStyle = pw.TextStyle(font: ttfBold, fontSize: 12, fontWeight: pw.FontWeight.bold);
 
     pdf.addPage(
       pw.Page(
@@ -269,7 +293,7 @@ class ReceiptGenerator {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               // ═══════════════════════════════════════════════════════════
-              // CABEÇALHO - LOGO E EMPRESA
+              // CABEÇALHO - LOGO (se existir)
               // ═══════════════════════════════════════════════════════════
               if (companyData?.imageBytes != null) ...[
                 pw.Center(
@@ -284,109 +308,47 @@ class ReceiptGenerator {
                 pw.SizedBox(height: 8),
               ],
               
-              // Nome da empresa
-              pw.Center(
-                child: pw.Text(
-                  companyName,
-                  style: titleStyle,
-                  textAlign: pw.TextAlign.center,
-                ),
-              ),
-              pw.SizedBox(height: 4),
-              
-              // Morada
+              // ═══════════════════════════════════════════════════════════
+              // DADOS DA EMPRESA (alinhado à esquerda, como no Moloni)
+              // ═══════════════════════════════════════════════════════════
+              pw.Text(companyName, style: headerStyle),
+              if (companyData?.businessName != null && companyData!.businessName.isNotEmpty)
+                pw.Text('Empresa: ${companyData!.businessName}', style: smallStyle),
+              pw.Text('Contribuinte: $companyVat', style: smallStyle),
               if (companyAddress.isNotEmpty)
-                pw.Center(
-                  child: pw.Text(
-                    companyAddress,
-                    style: smallStyle,
-                    textAlign: pw.TextAlign.center,
-                  ),
-                ),
+                pw.Text(companyAddress, style: smallStyle),
               if (companyZipCode.isNotEmpty || companyCity.isNotEmpty)
-                pw.Center(
-                  child: pw.Text(
-                    '$companyZipCode $companyCity'.trim(),
-                    style: smallStyle,
-                    textAlign: pw.TextAlign.center,
-                  ),
-                ),
-              
-              // NIF da empresa
-              pw.Center(child: pw.Text('NIF: $companyVat', style: smallStyle)),
-              
-              // Contactos
-              if (companyPhone != null && companyPhone.isNotEmpty)
-                pw.Center(child: pw.Text('Tel: $companyPhone', style: smallStyle)),
+                pw.Text('$companyZipCode $companyCity'.trim(), style: smallStyle),
               if (companyEmail != null && companyEmail.isNotEmpty)
-                pw.Center(child: pw.Text(companyEmail, style: smallStyle)),
+                pw.Text('E-mail: $companyEmail', style: smallStyle),
+              if (companyPhone != null && companyPhone.isNotEmpty)
+                pw.Text('Tel: $companyPhone', style: smallStyle),
               
               pw.SizedBox(height: 10),
-              _buildDashedLine(),
-              pw.SizedBox(height: 6),
-
+              
               // ═══════════════════════════════════════════════════════════
-              // TIPO E NÚMERO DO DOCUMENTO
+              // TIPO DE DOCUMENTO E DADOS (estilo Moloni)
               // ═══════════════════════════════════════════════════════════
-              pw.Center(
-                child: pw.Text(
-                  documentTypeName.toUpperCase(),
-                  style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
-                ),
+              pw.Text('Original', style: smallStyle),
+              // Tipo de documento + número numa linha
+              pw.Text(
+                '$documentTypeName ${document.number}',
+                style: smallStyle,
               ),
-              pw.Center(
-                child: pw.Text(document.number, style: headerStyle),
+              // Data (só data, sem hora)
+              pw.Text('Data: ${_formatDateOnly(document.date)}', style: smallStyle),
+              
+              pw.SizedBox(height: 8),
+              
+              // ═══════════════════════════════════════════════════════════
+              // CONTRIBUINTE DO CLIENTE (sempre mostrar)
+              // ═══════════════════════════════════════════════════════════
+              pw.Text(
+                'Contribuinte: ${_getCustomerVatDisplay(document)}',
+                style: smallStyle,
               ),
               
-              // ATCUD
-              if (document.atcud != null && document.atcud!.isNotEmpty)
-                pw.Center(
-                  child: pw.Text('ATCUD: ${document.atcud}', style: smallStyle),
-                ),
-              
-              pw.SizedBox(height: 4),
-              
-              // Data e hora
-              pw.Center(child: pw.Text(document.formattedDateTime, style: normalStyle)),
-              
-              // Indicador de desconto global (se existir)
-              if (document.hasGlobalDiscount)
-                pw.Center(
-                  child: pw.Container(
-                    margin: const pw.EdgeInsets.only(top: 4),
-                    padding: const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.green800),
-                      borderRadius: pw.BorderRadius.circular(4),
-                    ),
-                    child: pw.Text(
-                      'DESCONTO ${document.deductionPercentage.toStringAsFixed(0)}%',
-                      style: pw.TextStyle(
-                        fontSize: 8,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.green800,
-                      ),
-                    ),
-                  ),
-                ),
-              
-              pw.SizedBox(height: 6),
-              _buildDashedLine(),
-              pw.SizedBox(height: 6),
-
-              // ═══════════════════════════════════════════════════════════
-              // CLIENTE (se não for Consumidor Final)
-              // ═══════════════════════════════════════════════════════════
-              if (_isValidCustomer(document)) ...[
-                pw.Text('Cliente: ${document.customerName}', style: normalStyle),
-                if (document.customerVat.isNotEmpty && document.customerVat != '999999990')
-                  pw.Text('NIF: ${document.customerVat}', style: smallStyle),
-                if (document.customerAddress != null && document.customerAddress!.isNotEmpty)
-                  pw.Text(document.customerAddress!, style: smallStyle),
-                pw.SizedBox(height: 6),
-                _buildThinLine(),
-                pw.SizedBox(height: 6),
-              ],
+              pw.SizedBox(height: 8),
 
               // ═══════════════════════════════════════════════════════════
               // CABEÇALHO DOS PRODUTOS
@@ -396,6 +358,7 @@ class ReceiptGenerator {
                   pw.Expanded(flex: 4, child: pw.Text('Artigo', style: headerStyle)),
                   pw.SizedBox(width: 25, child: pw.Text('Qtd', style: headerStyle, textAlign: pw.TextAlign.right)),
                   pw.SizedBox(width: 40, child: pw.Text('PVP', style: headerStyle, textAlign: pw.TextAlign.right)),
+                  pw.SizedBox(width: 25, child: pw.Text('Desc.', style: headerStyle, textAlign: pw.TextAlign.right)),
                   pw.SizedBox(width: 25, child: pw.Text('IVA', style: headerStyle, textAlign: pw.TextAlign.right)),
                   pw.SizedBox(width: 50, child: pw.Text('Total', style: headerStyle, textAlign: pw.TextAlign.right)),
                 ],
@@ -407,68 +370,128 @@ class ReceiptGenerator {
               // ═══════════════════════════════════════════════════════════
               // LISTA DE PRODUTOS (valores da API)
               // ═══════════════════════════════════════════════════════════
-              ...document.products.map((product) => _buildProductRow(product, discountStyle, smallStyle)),
+              ...document.products.map((product) => _buildProductRow(product, normalStyle, smallStyle, discountStyle)),
               
               pw.SizedBox(height: 4),
               _buildDashedLine(),
               pw.SizedBox(height: 6),
 
               // ═══════════════════════════════════════════════════════════
-              // SECÇÃO DE DESCONTOS (valores da API)
+              // RESUMO DA FATURA (logo após artigos)
+              // ═══════════════════════════════════════════════════════════
+              _buildTotalRow('Total Ilíquido:', document.grossValue, normalStyle),
+              pw.SizedBox(height: 2),
+              
+              // IVAs discriminados por taxa
+              ...taxSummaries.map((tax) => _buildTotalRow(
+                '${tax.displayName} ${tax.rate.toStringAsFixed(0)}%:',
+                tax.taxValue,
+                smallStyle,
+              ),),
+              
+              pw.SizedBox(height: 4),
+              
+              // Total a pagar (destaque)
+              pw.Container(
+                padding: const pw.EdgeInsets.symmetric(vertical: 4),
+                child: _buildTotalRow('TOTAL:', document.grossValue, totalStyle),
+              ),
+              
+              pw.SizedBox(height: 6),
+              _buildDashedLine(),
+              pw.SizedBox(height: 6),
+
+              // ═══════════════════════════════════════════════════════════
+              // SECÇÃO DE DESCONTOS DETALHADA
               // ═══════════════════════════════════════════════════════════
               if (document.hasAnyDiscount) ...[
-                pw.Text('DESCONTOS', style: headerStyle),
-                pw.SizedBox(height: 4),
-                
-                // Desconto comercial (soma dos descontos de linha)
-                if (document.hasComercialDiscount)
-                  _buildDiscountRow(
-                    'Desconto Comercial:',
-                    document.comercialDiscountValue,
-                    discountStyle,
-                  ),
-                
-                // Desconto global/financeiro
-                if (document.hasGlobalDiscount)
-                  _buildDiscountRow(
-                    'Desconto ${document.deductionPercentage.toStringAsFixed(0)}%:',
-                    document.deductionValue,
-                    discountStyle,
-                  ),
-                
-                // Total de descontos (se ambos existirem)
-                if (document.hasComercialDiscount && document.hasGlobalDiscount) ...[
-                  pw.SizedBox(height: 2),
-                  _buildDiscountRow(
-                    'Total Descontos:',
-                    document.totalDiscountValue,
-                    pw.TextStyle(
-                      fontSize: 8,
-                      fontWeight: pw.FontWeight.bold,
-                      color: PdfColors.green800,
-                    ),
-                  ),
-                ],
-                
+                pw.Text('Descontos', style: discountHeaderStyle),
                 pw.SizedBox(height: 4),
                 _buildThinLine(),
+                pw.SizedBox(height: 4),
+                
+                // Valor bruto (antes de descontos)
+                _buildDiscountDetailRow(
+                  'Valor Bruto:',
+                  grossBeforeDiscounts,
+                  smallStyle,
+                  isNegative: false,
+                ),
+                pw.SizedBox(height: 2),
+                
+                // Descontos de linha (comerciais)
+                if (productDiscounts.isNotEmpty) ...[
+                  pw.Text('Descontos de Linha:', style: smallStyle),
+                  ...productDiscounts.map((d) => pw.Padding(
+                    padding: const pw.EdgeInsets.only(left: 8, top: 1),
+                    child: pw.Row(
+                      children: [
+                        pw.Expanded(
+                          child: pw.Text(
+                            '${d.productName} (${d.discountPercentage.toStringAsFixed(0)}%)',
+                            style: tinyStyle,
+                          ),
+                        ),
+                        pw.Text(
+                          '-${_formatCurrency(d.discountValue)}',
+                          style: discountTinyStyle,
+                        ),
+                      ],
+                    ),
+                  ),),
+                  pw.SizedBox(height: 2),
+                  _buildDiscountDetailRow(
+                    'Subtotal Desc. Linha:',
+                    document.comercialDiscountValue,
+                    discountStyle,
+                    isNegative: true,
+                  ),
+                  pw.SizedBox(height: 4),
+                ],
+                
+                // Desconto global (financeiro)
+                if (document.hasGlobalDiscount) ...[
+                  _buildDiscountDetailRow(
+                    'Desconto Global (${document.deductionPercentage.toStringAsFixed(0)}%):',
+                    document.deductionValue,
+                    discountStyle,
+                    isNegative: true,
+                  ),
+                  pw.SizedBox(height: 4),
+                ],
+                
+                // Linha separadora
+                _buildThinLine(),
+                pw.SizedBox(height: 4),
+                
+                // Total de descontos
+                _buildDiscountDetailRow(
+                  'Total Descontos:',
+                  document.totalDiscountValue,
+                  discountTotalStyle,
+                  isNegative: true,
+                ),
+                
+                pw.SizedBox(height: 6),
+                _buildDashedLine(),
                 pw.SizedBox(height: 6),
               ],
 
               // ═══════════════════════════════════════════════════════════
-              // RESUMO DE IVA (valores da API)
+              // TABELA DE IMPOSTOS (incidência detalhada)
               // ═══════════════════════════════════════════════════════════
-              pw.Text('RESUMO IVA', style: headerStyle),
+              pw.Text('Impostos', style: headerStyle),
               pw.SizedBox(height: 4),
               
               // Cabeçalho da tabela de IVA
               pw.Row(
                 children: [
-                  pw.Expanded(flex: 3, child: pw.Text('Taxa', style: smallStyle)),
+                  pw.Expanded(flex: 4, child: pw.Text('Taxa', style: smallStyle)),
                   pw.Expanded(flex: 3, child: pw.Text('Incidência', style: smallStyle, textAlign: pw.TextAlign.right)),
-                  pw.Expanded(flex: 3, child: pw.Text('IVA', style: smallStyle, textAlign: pw.TextAlign.right)),
+                  pw.Expanded(flex: 3, child: pw.Text('Total', style: smallStyle, textAlign: pw.TextAlign.right)),
                 ],
               ),
+              _buildThinLine(),
               pw.SizedBox(height: 2),
               
               // Linhas de IVA por taxa
@@ -477,7 +500,7 @@ class ReceiptGenerator {
                 child: pw.Row(
                   children: [
                     pw.Expanded(
-                      flex: 3,
+                      flex: 4,
                       child: pw.Text(
                         '${tax.displayName} ${tax.rate.toStringAsFixed(0)}%',
                         style: smallStyle,
@@ -501,34 +524,17 @@ class ReceiptGenerator {
                     ),
                   ],
                 ),
-              )),
+              ),),
               
               pw.SizedBox(height: 6),
               _buildDashedLine(),
               pw.SizedBox(height: 6),
 
               // ═══════════════════════════════════════════════════════════
-              // TOTAIS (valores EXACTOS da API Moloni)
-              // ═══════════════════════════════════════════════════════════
-              _buildTotalRow('Total Ilíquido:', document.netValue, normalStyle),
-              _buildTotalRow('Total IVA:', document.taxValue, normalStyle),
-              pw.SizedBox(height: 4),
-              
-              // Total a pagar (destaque)
-              pw.Container(
-                padding: const pw.EdgeInsets.symmetric(vertical: 4),
-                child: _buildTotalRow('TOTAL:', document.grossValue, totalStyle),
-              ),
-              
-              pw.SizedBox(height: 6),
-              _buildThinLine(),
-              pw.SizedBox(height: 6),
-
-              // ═══════════════════════════════════════════════════════════
               // PAGAMENTOS
               // ═══════════════════════════════════════════════════════════
               if (document.payments.isNotEmpty) ...[
-                pw.Text('PAGAMENTO', style: headerStyle),
+                pw.Text('Pagamentos', style: headerStyle),
                 pw.SizedBox(height: 4),
                 ...document.payments.map((payment) => pw.Padding(
                   padding: const pw.EdgeInsets.only(bottom: 2),
@@ -539,9 +545,9 @@ class ReceiptGenerator {
                       pw.Text(_formatCurrency(payment.value), style: normalStyle),
                     ],
                   ),
-                )),
+                ),),
                 pw.SizedBox(height: 6),
-                _buildThinLine(),
+                _buildDashedLine(),
                 pw.SizedBox(height: 6),
               ],
 
@@ -549,11 +555,18 @@ class ReceiptGenerator {
               // QR CODE
               // ═══════════════════════════════════════════════════════════
               pw.Center(
-                child: pw.BarcodeWidget(
-                  barcode: pw.Barcode.qrCode(),
-                  data: document.qrCode ?? _buildQrCodeData(document, companyVat),
-                  width: 80,
-                  height: 80,
+                child: pw.Column(
+                  children: [
+                    if (document.atcud != null && document.atcud!.isNotEmpty)
+                      pw.Text('ATCUD: ${document.atcud}', style: tinyStyle),
+                    pw.SizedBox(height: 4),
+                    pw.BarcodeWidget(
+                      barcode: pw.Barcode.qrCode(),
+                      data: document.qrCode ?? _buildQrCodeData(document, companyVat),
+                      width: 80,
+                      height: 80,
+                    ),
+                  ],
                 ),
               ),
               pw.SizedBox(height: 6),
@@ -612,16 +625,64 @@ class ReceiptGenerator {
       ..sort((a, b) => a.rate.compareTo(b.rate));
   }
 
+  /// Calcula os descontos por produto
+  List<_ProductDiscountInfo> _calculateProductDiscounts(List<DocumentProduct> products) {
+    final discounts = <_ProductDiscountInfo>[];
+    
+    for (final product in products) {
+      // Verificar se tem desconto (discount > 0)
+      if (product.discount > 0) {
+        // Taxa de IVA do produto
+        final taxRate = product.taxes.isNotEmpty ? product.taxes.first.value : 23.0;
+        
+        // PVP unitário (preço com IVA)
+        final pvpUnit = product.unitPrice * (1 + taxRate / 100);
+        
+        // Valor bruto com IVA = quantidade × PVP unitário
+        final grossValueWithVat = product.quantity * pvpUnit;
+        
+        // Valor do desconto = bruto com IVA - total da linha (que já tem desconto aplicado)
+        final discountValue = grossValueWithVat - product.lineTotal;
+        
+        // Adicionar se o desconto for significativo (> 0.001 para evitar erros de arredondamento)
+        if (discountValue > 0.001) {
+          discounts.add(_ProductDiscountInfo(
+            productName: product.name,
+            discountPercentage: product.discount,
+            discountValue: discountValue,
+          ),);
+        }
+      }
+    }
+    
+    return discounts;
+  }
+
+  /// Calcula o valor bruto total (antes de qualquer desconto) - COM IVA
+  double _calculateGrossBeforeDiscounts(List<DocumentProduct> products) {
+    double total = 0;
+    for (final product in products) {
+      // Taxa de IVA do produto
+      final taxRate = product.taxes.isNotEmpty ? product.taxes.first.value : 23.0;
+      // PVP unitário (preço com IVA)
+      final pvpUnit = product.unitPrice * (1 + taxRate / 100);
+      total += product.quantity * pvpUnit;
+    }
+    return total;
+  }
+
   /// Linha de produto (todos os valores da API)
   pw.Widget _buildProductRow(
     DocumentProduct product,
-    pw.TextStyle discountStyle,
+    pw.TextStyle normalStyle,
     pw.TextStyle smallStyle,
+    pw.TextStyle discountStyle,
   ) {
-    final normalStyle = const pw.TextStyle(fontSize: 8);
-    
     // Taxa de IVA do produto
     final taxRate = product.taxes.isNotEmpty ? product.taxes.first.value : 23.0;
+    
+    // PVP unitário (preço com IVA) = preço base × (1 + taxa IVA)
+    final pvpUnit = product.unitPrice * (1 + taxRate / 100);
     
     return pw.Padding(
       padding: const pw.EdgeInsets.only(bottom: 4),
@@ -631,7 +692,7 @@ class ReceiptGenerator {
           // Nome do produto
           pw.Text(product.name, style: normalStyle),
           
-          // Detalhes: Qtd | PVP Unit. | IVA% | Total (com IVA)
+          // Detalhes: Qtd | PVP Unit. (com IVA) | Desc% | IVA% | Total (com IVA)
           pw.Row(
             children: [
               pw.Expanded(flex: 4, child: pw.SizedBox()),
@@ -646,7 +707,17 @@ class ReceiptGenerator {
               pw.SizedBox(
                 width: 40,
                 child: pw.Text(
-                  _formatCurrency(product.unitPrice), // PVP da API
+                  _formatCurrency(pvpUnit), // PVP com IVA
+                  style: smallStyle,
+                  textAlign: pw.TextAlign.right,
+                ),
+              ),
+              pw.SizedBox(
+                width: 25,
+                child: pw.Text(
+                  product.discount > 0 
+                      ? '${product.discount.toStringAsFixed(0)}%'
+                      : '0%',
                   style: smallStyle,
                   textAlign: pw.TextAlign.right,
                 ),
@@ -669,33 +740,22 @@ class ReceiptGenerator {
               ),
             ],
           ),
-          
-          // Linha de desconto (se existir)
-          if (product.hasDiscount)
-            pw.Padding(
-              padding: const pw.EdgeInsets.only(top: 2),
-              child: pw.Row(
-                children: [
-                  pw.Expanded(
-                    child: pw.Text(
-                      '  Desc. ${product.discount.toStringAsFixed(0)}%',
-                      style: discountStyle,
-                    ),
-                  ),
-                  pw.SizedBox(
-                    width: 50,
-                    child: pw.Text(
-                      // Valor do desconto = (PVP * Qtd) - lineTotal
-                      '-${_formatCurrency((product.unitPrice * product.quantity) - product.lineTotal)}',
-                      style: discountStyle,
-                      textAlign: pw.TextAlign.right,
-                    ),
-                  ),
-                ],
-              ),
-            ),
         ],
       ),
+    );
+  }
+
+  /// Linha de detalhe de desconto
+  pw.Widget _buildDiscountDetailRow(String label, double value, pw.TextStyle style, {bool isNegative = false}) {
+    return pw.Row(
+      mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+      children: [
+        pw.Text(label, style: style),
+        pw.Text(
+          isNegative ? '-${_formatCurrency(value)}' : _formatCurrency(value),
+          style: style,
+        ),
+      ],
     );
   }
 
@@ -710,25 +770,6 @@ class ReceiptGenerator {
           width: 70,
           child: pw.Text(
             _formatCurrency(value),
-            style: style,
-            textAlign: pw.TextAlign.right,
-          ),
-        ),
-      ],
-    );
-  }
-
-  /// Linha de desconto (valor negativo)
-  pw.Widget _buildDiscountRow(String label, double value, pw.TextStyle style) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.end,
-      children: [
-        pw.Text(label, style: style),
-        pw.SizedBox(width: 20),
-        pw.SizedBox(
-          width: 70,
-          child: pw.Text(
-            '-${_formatCurrency(value)}',
             style: style,
             textAlign: pw.TextAlign.right,
           ),
@@ -762,7 +803,7 @@ class ReceiptGenerator {
 
   /// Formata valor monetário
   String _formatCurrency(double value) {
-    return '${value.toStringAsFixed(2)} EUR';
+    return '${value.toStringAsFixed(2)}€';
   }
 
   /// Formata quantidade
@@ -781,13 +822,6 @@ class ReceiptGenerator {
       }
     }
     return '';
-  }
-
-  /// Verifica se é um cliente válido (não é Consumidor Final)
-  bool _isValidCustomer(Document document) {
-    return document.customerName.isNotEmpty &&
-           document.customerName != 'Consumidor Final' &&
-           document.customerName != 'Cliente Final';
   }
 
   /// Constrói os dados do QR Code conforme especificação AT
@@ -848,5 +882,24 @@ class ReceiptGenerator {
     }
     
     return parts.join('*');
+  }
+
+  /// Formata a data sem hora (DD-MM-YYYY)
+  String _formatDateOnly(DateTime date) {
+    return '${date.day.toString().padLeft(2, '0')}-'
+           '${date.month.toString().padLeft(2, '0')}-'
+           '${date.year}';
+  }
+
+  /// Retorna o NIF do cliente para exibição
+  /// Se for consumidor final, mostra "Consumidor Final"
+  String _getCustomerVatDisplay(Document document) {
+    if (document.customerVat.isEmpty || 
+        document.customerVat == '999999990' ||
+        document.customerName == 'Consumidor Final' ||
+        document.customerName == 'Cliente Final') {
+      return 'Consumidor Final';
+    }
+    return document.customerVat;
   }
 }

@@ -421,7 +421,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         'products_count': request.items.length,
         'payments_count': request.payments.length,
         'global_discount': request.globalDiscount,
-      });
+      },);
 
       AppLogger.d('📤 Request URL: $url');
       AppLogger.d('📅 date value in body: "${jsonBody['date']}"');
@@ -512,7 +512,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       AppLogger.moloniApi('$endpoint/getOne', data: {
         'company_id': companyId,
         'document_id': documentId,
-      });
+      },);
 
       final response = await dio.post(
         url,
@@ -589,7 +589,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       AppLogger.moloniApi('$endpoint/getPDFLink', data: {
         'company_id': companyId,
         'document_id': documentId,
-      });
+      },);
 
       final linkResponse = await dio.post(
         url,

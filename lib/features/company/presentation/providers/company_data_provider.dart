@@ -68,7 +68,7 @@ class CompanyDataNotifier extends StateNotifier<CompanyDataState> {
       AppLogger.d('💳 A carregar métodos de pagamento...');
       await _ref.read(checkoutProvider.notifier).loadPaymentMethods();
 
-      // 3. TODO: Carregar outros dados específicos da empresa
+      // 3. TO DO: Carregar outros dados específicos da empresa
       // - Produtos (se quiser cache)
       // - Clientes frequentes
       // - Configurações da empresa

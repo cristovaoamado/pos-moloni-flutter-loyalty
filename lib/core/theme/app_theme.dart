@@ -1,50 +1,68 @@
 import 'package:flutter/material.dart';
+import 'package:pos_moloni_app/core/theme/app_colors.dart';
 
 /// Tema da aplicação optimizado para touch/POS
 class AppTheme {
   AppTheme._();
 
-  // Cores principais
-  static const Color _primaryColor = Color(0xFF1565C0); // Azul
-  static const Color _secondaryColor = Color(0xFF43A047); // Verde
-  static const Color _errorColor = Color(0xFFD32F2F); // Vermelho
-  static const Color _warningColor = Color(0xFFF57C00); // Laranja
-
   // Dimensões para touch
-  static const double buttonMinHeight = 52.0; // Altura mínima dos botões
-  static const double buttonMinWidth = 120.0; // Largura mínima dos botões
-  static const double touchTargetSize = 48.0; // Tamanho mínimo para touch
-  static const double borderRadius = 4.0; // Cantos quase retos
-  static const double inputHeight = 56.0; // Altura dos inputs
+  static const double buttonMinHeight = 52.0;
+  static const double buttonMinWidth = 120.0;
+  static const double touchTargetSize = 48.0;
+  static const double borderRadius = 4.0;
+  static const double inputHeight = 56.0;
 
   /// Tema claro (principal)
   static ThemeData get lightTheme {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: _primaryColor,
+    final colorScheme = ColorScheme(
       brightness: Brightness.light,
-      primary: _primaryColor,
-      secondary: _secondaryColor,
-      error: _errorColor,
+      primary: AppColors.primary,
+      onPrimary: Colors.white,
+      primaryContainer: AppColors.primaryLight,
+      onPrimaryContainer: AppColors.primaryDark,
+
+      secondary: AppColors.secondary,
+      onSecondary: Colors.white,
+      secondaryContainer: AppColors.secondaryLight,
+      onSecondaryContainer: AppColors.secondaryDark,
+
+      error: AppColors.error,
+      onError: Colors.white,
+
+      surface: AppColors.surface,
+      onSurface: AppColors.textPrimary,
+      surfaceContainerHighest: AppColors.surfaceVariant,
+
+      background: AppColors.background,
+      onBackground: AppColors.textPrimary,
+
+      outline: AppColors.grey400,
+      outlineVariant: AppColors.grey200,
+
+      tertiary: AppColors.accent,
+      onTertiary: AppColors.textPrimary,
+      tertiaryContainer: AppColors.accent,
+      onTertiaryContainer: AppColors.primaryDark,
     );
 
     return ThemeData(
       useMaterial3: true,
       colorScheme: colorScheme,
-      
+
       // AppBar
       appBarTheme: AppBarTheme(
         elevation: 2,
         centerTitle: false,
         backgroundColor: colorScheme.primary,
-        foregroundColor: Colors.white,
-        titleTextStyle: const TextStyle(
+        foregroundColor: colorScheme.onPrimary,
+        titleTextStyle: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
-          color: Colors.white,
+          color: colorScheme.onPrimary,
         ),
       ),
 
-      // Botões Elevated (principais)
+      // ElevatedButton
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
@@ -53,6 +71,8 @@ class AppTheme {
             borderRadius: BorderRadius.circular(borderRadius),
           ),
           elevation: 2,
+          backgroundColor: colorScheme.primary,
+          foregroundColor: colorScheme.onPrimary,
           textStyle: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -61,7 +81,7 @@ class AppTheme {
         ),
       ),
 
-      // Botões Outlined (secundários)
+      // OutlinedButton
       outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
@@ -78,7 +98,7 @@ class AppTheme {
         ),
       ),
 
-      // Botões Text (terciários)
+      // TextButton
       textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
@@ -86,6 +106,7 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadius),
           ),
+          foregroundColor: colorScheme.primary,
           textStyle: const TextStyle(
             fontSize: 16,
             fontWeight: FontWeight.w600,
@@ -94,7 +115,7 @@ class AppTheme {
         ),
       ),
 
-      // Botões de ícone
+      // IconButton
       iconButtonTheme: IconButtonThemeData(
         style: IconButton.styleFrom(
           minimumSize: const Size(touchTargetSize, touchTargetSize),
@@ -110,54 +131,23 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(borderRadius),
           ),
-          textStyle: const TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w600,
-            letterSpacing: 0.5,
-          ),
         ),
       ),
 
-      // FloatingActionButton
+      // FAB
       floatingActionButtonTheme: FloatingActionButtonThemeData(
+        backgroundColor: colorScheme.primary,
+        foregroundColor: colorScheme.onPrimary,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         elevation: 4,
-        extendedPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-        extendedTextStyle: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.w600,
-        ),
-      ),
-
-      // SegmentedButton
-      segmentedButtonTheme: SegmentedButtonThemeData(
-        style: ButtonStyle(
-          minimumSize: WidgetStateProperty.all(
-            const Size(buttonMinWidth, buttonMinHeight),
-          ),
-          padding: WidgetStateProperty.all(
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          ),
-          shape: WidgetStateProperty.all(
-            RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(borderRadius),
-            ),
-          ),
-          textStyle: WidgetStateProperty.all(
-            const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-        ),
       ),
 
       // Inputs
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
+        fillColor: AppColors.surfaceVariant,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
@@ -165,7 +155,7 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
-          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
+          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
@@ -175,8 +165,8 @@ class AppTheme {
           borderRadius: BorderRadius.circular(borderRadius),
           borderSide: BorderSide(color: colorScheme.error, width: 1.5),
         ),
-        labelStyle: const TextStyle(fontSize: 16),
-        hintStyle: TextStyle(fontSize: 16, color: colorScheme.outline),
+        labelStyle: TextStyle(fontSize: 16, color: AppColors.textSecondary),
+        hintStyle: TextStyle(fontSize: 16, color: AppColors.textHint),
       ),
 
       // Cards
@@ -185,7 +175,6 @@ class AppTheme {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(borderRadius),
         ),
-        margin: const EdgeInsets.all(4),
       ),
 
       // Chips
@@ -194,7 +183,11 @@ class AppTheme {
           borderRadius: BorderRadius.circular(borderRadius),
         ),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        labelStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+        labelStyle: TextStyle(
+          fontSize: 14,
+          fontWeight: FontWeight.w500,
+          color: AppColors.textPrimary,
+        ),
       ),
 
       // Dialogs
@@ -205,71 +198,15 @@ class AppTheme {
         titleTextStyle: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
-          color: colorScheme.onSurface,
+          color: AppColors.textPrimary,
         ),
-      ),
-
-      // BottomSheet
-      bottomSheetTheme: BottomSheetThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(
-            top: Radius.circular(borderRadius * 2),
-          ),
-        ),
-      ),
-
-      // Snackbar
-      snackBarTheme: SnackBarThemeData(
-        behavior: SnackBarBehavior.floating,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
-        ),
-        contentTextStyle: const TextStyle(fontSize: 14),
-      ),
-
-      // ListTile
-      listTileTheme: const ListTileThemeData(
-        minVerticalPadding: 12,
-        contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      ),
-
-      // Switch
-      switchTheme: SwitchThemeData(
-        thumbColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return colorScheme.primary;
-          }
-          return colorScheme.outline;
-        }),
-        trackColor: WidgetStateProperty.resolveWith((states) {
-          if (states.contains(WidgetState.selected)) {
-            return colorScheme.primaryContainer;
-          }
-          return colorScheme.surfaceContainerHighest;
-        }),
-      ),
-
-      // Checkbox
-      checkboxTheme: CheckboxThemeData(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(2),
-        ),
-      ),
-
-      // Dropdown
-      dropdownMenuTheme: DropdownMenuThemeData(
-        inputDecorationTheme: InputDecorationTheme(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(borderRadius),
-          ),
-        ),
+        backgroundColor: AppColors.surface,
       ),
 
       // Divider
       dividerTheme: DividerThemeData(
         thickness: 1,
-        color: colorScheme.outlineVariant,
+        color: AppColors.divider,
       ),
 
       // Typography
@@ -295,15 +232,14 @@ class AppTheme {
 
   /// Tema escuro
   static ThemeData get darkTheme {
-    final colorScheme = ColorScheme.fromSeed(
-      seedColor: _primaryColor,
+    final colorScheme = lightTheme.colorScheme.copyWith(
       brightness: Brightness.dark,
-      primary: _primaryColor,
-      secondary: _secondaryColor,
-      error: _errorColor,
+      background: AppColors.grey900,
+      surface: AppColors.grey800,
+      onSurface: AppColors.white,
+      onBackground: AppColors.white,
     );
 
-    // Baseado no tema claro com ajustes para dark mode
     return lightTheme.copyWith(
       colorScheme: colorScheme,
       appBarTheme: AppBarTheme(
@@ -315,13 +251,14 @@ class AppTheme {
     );
   }
 
-  // === ESTILOS ESPECÍFICOS PARA POS ===
+  // === ESTILOS POS ===
 
-  /// Estilo para botões de acção grandes (Checkout, Pagar, etc.)
   static ButtonStyle get primaryActionButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(double.infinity, 64),
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
       ),
@@ -333,7 +270,6 @@ class AppTheme {
     );
   }
 
-  /// Estilo para botões de acção secundários
   static ButtonStyle get secondaryActionButtonStyle {
     return OutlinedButton.styleFrom(
       minimumSize: const Size(double.infinity, 56),
@@ -341,6 +277,7 @@ class AppTheme {
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
       ),
+      side: BorderSide(color: AppColors.secondary, width: 1.5),
       textStyle: const TextStyle(
         fontSize: 16,
         fontWeight: FontWeight.w600,
@@ -348,18 +285,17 @@ class AppTheme {
     );
   }
 
-  /// Estilo para botões de quantidade (+/-)
   static ButtonStyle get quantityButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(56, 56),
-      padding: EdgeInsets.zero,
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
       ),
     );
   }
 
-  /// Estilo para botões de método de pagamento
   static ButtonStyle paymentMethodButtonStyle(bool isSelected) {
     return OutlinedButton.styleFrom(
       minimumSize: const Size(120, 80),
@@ -368,17 +304,20 @@ class AppTheme {
         borderRadius: BorderRadius.circular(borderRadius),
       ),
       side: BorderSide(
-        color: isSelected ? _primaryColor : Colors.grey.shade300,
+        color: isSelected ? AppColors.primary : AppColors.grey300,
         width: isSelected ? 2 : 1,
       ),
-      backgroundColor: isSelected ? _primaryColor.withOpacity(0.1) : null,
+      backgroundColor: isSelected
+          ? AppColors.primary.withValues(alpha: 0.1)
+          : null,
     );
   }
 
-  /// Estilo para botões de grid de produtos
   static ButtonStyle get productGridButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(100, 100),
+      backgroundColor: AppColors.primary,
+      foregroundColor: Colors.white,
       padding: const EdgeInsets.all(8),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
@@ -386,12 +325,11 @@ class AppTheme {
     );
   }
 
-  /// Estilo para botão de perigo (eliminar, cancelar)
   static ButtonStyle get dangerButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(buttonMinWidth, buttonMinHeight),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      backgroundColor: _errorColor,
+      backgroundColor: AppColors.error,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
@@ -403,12 +341,11 @@ class AppTheme {
     );
   }
 
-  /// Estilo para botão de sucesso (confirmar, guardar)
   static ButtonStyle get successButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(buttonMinWidth, buttonMinHeight),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      backgroundColor: _secondaryColor,
+      backgroundColor: AppColors.success,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),
@@ -420,12 +357,11 @@ class AppTheme {
     );
   }
 
-  /// Estilo para botão de aviso
   static ButtonStyle get warningButtonStyle {
     return ElevatedButton.styleFrom(
       minimumSize: const Size(buttonMinWidth, buttonMinHeight),
       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      backgroundColor: _warningColor,
+      backgroundColor: AppColors.warning,
       foregroundColor: Colors.white,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(borderRadius),

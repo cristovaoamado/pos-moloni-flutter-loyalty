@@ -86,7 +86,6 @@ class DocumentModel extends Document {
     // - net_value: valor final a pagar (após todos descontos e impostos)
     // ================================================================
     
-    final grossValue = _parseDouble(json['gross_value']);
     final comercialDiscountValue = _parseDouble(json['comercial_discount_value']);
     final financialDiscount = _parseDouble(json['financial_discount']);
     final financialDiscountValue = _parseDouble(json['financial_discount_value']);

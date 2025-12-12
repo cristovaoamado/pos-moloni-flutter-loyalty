@@ -21,6 +21,35 @@ class Company extends Equatable {
     this.imageUrl,
   });
 
+  /// Cria Company a partir do JSON da API (companies/getOne)
+  factory Company.fromApiJson(Map<String, dynamic> json) {
+    // Extrair imagem - construir URL completa
+    String? imageUrl;
+    final imageValue = json['image'];
+    if (imageValue != null && imageValue.toString().isNotEmpty) {
+      imageUrl = 'https://www.moloni.pt/_imagens/?img=${imageValue.toString()}';
+    }
+
+    return Company(
+      id: json['company_id'] as int? ?? 0,
+      name: json['name']?.toString() ?? '',
+      vat: json['vat']?.toString() ?? '',
+      email: json['email']?.toString() ?? '',
+      address: json['address']?.toString() ?? '',
+      city: json['city']?.toString() ?? '',
+      zipCode: json['zip_code']?.toString() ?? '',
+      country: (json['country'] as Map<String, dynamic>?)?['name']?.toString(),
+      countryId: json['country_id'] as int?,
+      phone: json['phone']?.toString(),
+      fax: json['fax']?.toString(),
+      website: json['website']?.toString(),
+      capital: json['capital']?.toString(),
+      commercialRegistrationNumber: json['commercial_registration_number']?.toString(),
+      registryOffice: json['registry_office']?.toString(),
+      imageUrl: imageUrl,
+    );
+  }
+
   final int id;
   final String name;
   final String vat;
@@ -100,35 +129,6 @@ class Company extends Equatable {
       commercialRegistrationNumber: commercialRegistrationNumber ?? this.commercialRegistrationNumber,
       registryOffice: registryOffice ?? this.registryOffice,
       imageUrl: imageUrl ?? this.imageUrl,
-    );
-  }
-
-  /// Cria Company a partir do JSON da API (companies/getOne)
-  factory Company.fromApiJson(Map<String, dynamic> json) {
-    // Extrair imagem - construir URL completa
-    String? imageUrl;
-    final imageValue = json['image'];
-    if (imageValue != null && imageValue.toString().isNotEmpty) {
-      imageUrl = 'https://www.moloni.pt/_imagens/?img=${imageValue.toString()}';
-    }
-
-    return Company(
-      id: json['company_id'] as int? ?? 0,
-      name: json['name']?.toString() ?? '',
-      vat: json['vat']?.toString() ?? '',
-      email: json['email']?.toString() ?? '',
-      address: json['address']?.toString() ?? '',
-      city: json['city']?.toString() ?? '',
-      zipCode: json['zip_code']?.toString() ?? '',
-      country: (json['country'] as Map<String, dynamic>?)?['name']?.toString(),
-      countryId: json['country_id'] as int?,
-      phone: json['phone']?.toString(),
-      fax: json['fax']?.toString(),
-      website: json['website']?.toString(),
-      capital: json['capital']?.toString(),
-      commercialRegistrationNumber: json['commercial_registration_number']?.toString(),
-      registryOffice: json['registry_office']?.toString(),
-      imageUrl: imageUrl,
     );
   }
 
