@@ -5,6 +5,7 @@ import 'package:pos_moloni_app/features/checkout/presentation/providers/checkout
 import 'package:pos_moloni_app/features/company/domain/entities/company.dart';
 import 'package:pos_moloni_app/features/company/presentation/providers/company_provider.dart';
 import 'package:pos_moloni_app/features/document_sets/presentation/providers/document_set_provider.dart';
+import 'package:pos_moloni_app/features/products/presentation/providers/favorite_products_provider.dart';
 
 /// Estado do carregamento de dados da empresa
 class CompanyDataState {
@@ -68,10 +69,10 @@ class CompanyDataNotifier extends StateNotifier<CompanyDataState> {
       AppLogger.d('💳 A carregar métodos de pagamento...');
       await _ref.read(checkoutProvider.notifier).loadPaymentMethods();
 
-      // 3. TO DO: Carregar outros dados específicos da empresa
-      // - Produtos (se quiser cache)
-      // - Clientes frequentes
-      // - Configurações da empresa
+      // 3. Carregar produtos favoritos (em background)
+      AppLogger.d('⭐ A carregar produtos favoritos...');
+      // Não usar await para não bloquear - carrega em background
+      _ref.read(favoriteProductsProvider.notifier).loadFavorites();
 
       state = state.copyWith(
         isLoading: false,
@@ -108,6 +109,7 @@ class CompanyDataNotifier extends StateNotifier<CompanyDataState> {
     // Limpar providers individuais
     _ref.read(documentSetProvider.notifier).clear();
     _ref.read(checkoutProvider.notifier).reset();
+    _ref.read(favoriteProductsProvider.notifier).clearFavorites();
 
     state = const CompanyDataState();
     AppLogger.i('🗑️ Dados da empresa limpos');

@@ -18,6 +18,7 @@ class Product extends Equatable {
     required this.taxes,
     this.hasStock = false,
     this.stock = 0,
+    this.posFavorite = false, // ← NOVO CAMPO
   });
   
   final int id;
@@ -32,6 +33,7 @@ class Product extends Equatable {
   final List<Tax> taxes;
   final bool hasStock;
   final double stock;
+  final bool posFavorite; // ← NOVO CAMPO
 
   /// URL completa da imagem
   String? get imageUrl {
@@ -72,8 +74,9 @@ class Product extends Equatable {
         taxes,
         hasStock,
         stock,
+        posFavorite, // ← NOVO CAMPO
       ];
 
   @override
-  String toString() => 'Product(id: $id, name: $name, price: $price)';
+  String toString() => 'Product(id: $id, name: $name, price: $price, posFavorite: $posFavorite)';
 }

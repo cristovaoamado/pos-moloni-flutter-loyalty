@@ -108,7 +108,6 @@ class VariableWeightBarcodeResult {
   const VariableWeightBarcodeResult({
     required this.originalBarcode,
     required this.productCode,
-    required this.productEan,
     required this.weight,
     this.price,
     required this.isWeightBased,
@@ -117,11 +116,8 @@ class VariableWeightBarcodeResult {
   /// Código de barras original completo
   final String originalBarcode;
 
-  /// Código do produto extraído (5-6 dígitos)
+  /// Código base do produto (usar como EAN no Moloni)
   final String productCode;
-
-  /// EAN para pesquisar no Moloni (código do produto com zeros ou prefixo)
-  final String productEan;
 
   /// Peso em kg (ex: 1.234)
   final double weight;
@@ -132,16 +128,14 @@ class VariableWeightBarcodeResult {
   /// True se é peso, False se é preço
   final bool isWeightBased;
 
-  /// Quantidade a usar (peso ou 1 se for preço)
+  /// Quantidade a usar no Moloni
   double get quantity => isWeightBased ? weight : 1.0;
 
   @override
   String toString() {
-    if (isWeightBased) {
-      return 'VariableWeightBarcode(product: $productCode, ean: $productEan, weight: ${weight.toStringAsFixed(3)} kg)';
-    } else {
-      return 'VariableWeightBarcode(product: $productCode, ean: $productEan, price: ${price?.toStringAsFixed(2)} €)';
-    }
+    return isWeightBased
+        ? 'VariableWeightBarcode(product: $productCode, weight: ${weight.toStringAsFixed(3)} kg)'
+        : 'VariableWeightBarcode(product: $productCode, price: ${price?.toStringAsFixed(2)} €)';
   }
 }
 
@@ -156,131 +150,62 @@ class VariableWeightBarcodeService {
   /// Verifica se um código de barras é de peso variável
   bool isVariableWeightBarcode(String barcode) {
     if (barcode.isEmpty) return false;
-    
-    // Verificar se começa com algum dos prefixos configurados
+
     for (final prefix in config.prefixes) {
       if (barcode.startsWith(prefix)) {
-        // Verificar comprimento mínimo esperado
-        final minLength = prefix.length + config.productCodeLength + config.weightLength;
-        if (barcode.length >= minLength) {
-          return true;
-        }
+        final minLength =
+            prefix.length + config.productCodeLength + config.weightLength;
+        return barcode.length >= minLength;
       }
     }
     return false;
   }
 
   /// Processa um código de barras de peso variável
-  /// Retorna null se não for um código válido de peso variável
   VariableWeightBarcodeResult? parse(String barcode) {
-    if (!isVariableWeightBarcode(barcode)) {
-      return null;
-    }
+    if (!isVariableWeightBarcode(barcode)) return null;
 
     try {
-      // Encontrar o prefixo usado
-      String usedPrefix = '';
-      for (final prefix in config.prefixes) {
-        if (barcode.startsWith(prefix)) {
-          usedPrefix = prefix;
-          break;
-        }
-      }
+      final prefix = config.prefixes.firstWhere(barcode.startsWith);
 
-      // Extrair código do produto
-      final productStart = usedPrefix.length + config.productCodeStart - 1;
+      // Código do produto
+      final productStart = prefix.length + config.productCodeStart - 1;
       final productEnd = productStart + config.productCodeLength;
-      
-      if (productEnd > barcode.length) {
-        return null;
-      }
-      
+      if (productEnd > barcode.length) return null;
+
       final productCode = barcode.substring(productStart, productEnd);
 
-      // Extrair peso/preço
-      final weightStart = productEnd;
-      final weightEnd = weightStart + config.weightLength;
-      
-      if (weightEnd > barcode.length) {
-        return null;
-      }
-      
-      final weightStr = barcode.substring(weightStart, weightEnd);
-      final weightInt = int.tryParse(weightStr);
-      
-      if (weightInt == null) {
-        return null;
-      }
+      // Peso / preço
+      final valueStart = productEnd;
+      final valueEnd = valueStart + config.weightLength;
+      if (valueEnd > barcode.length) return null;
 
-      // Calcular peso/preço com casas decimais
+      final valueRaw = int.tryParse(barcode.substring(valueStart, valueEnd));
+      if (valueRaw == null) return null;
+
       double weight;
       double? price;
-      
+
       if (config.isPrice) {
-        // É preço
-        price = weightInt / _pow10(config.priceDecimals);
-        weight = 1.0; // Quantidade fixa de 1
+        price = valueRaw / _pow10(config.priceDecimals);
+        weight = 1.0;
       } else {
-        // É peso
-        weight = weightInt / _pow10(config.weightDecimals);
+        weight = valueRaw / _pow10(config.weightDecimals);
         price = null;
       }
-
-      // Gerar EAN para pesquisa no Moloni
-      // Opções comuns:
-      // 1. Usar só o código do produto com zeros: "00000PPPPP"
-      // 2. Usar prefixo + código + zeros: "2PPPPP00000C"
-      // 3. Usar o código como está
-      final productEan = _generateSearchEan(usedPrefix, productCode, barcode.length);
 
       return VariableWeightBarcodeResult(
         originalBarcode: barcode,
         productCode: productCode,
-        productEan: productEan,
         weight: weight,
         price: price,
         isWeightBased: !config.isPrice,
       );
-    } catch (e) {
+    } catch (_) {
       return null;
     }
   }
 
-  /// Gera o EAN para pesquisar o produto no Moloni
-  /// 
-  /// Estratégia: Criar um EAN "base" substituindo o peso por zeros
-  /// Assim o Moloni pode ter o produto cadastrado com peso zero
-  /// Ex: 2123450150089 -> 2123450000000 (com check digit recalculado)
-  String _generateSearchEan(String prefix, String productCode, int originalLength) {
-    // Criar EAN base: prefixo + código do produto + zeros
-    final zerosNeeded = originalLength - prefix.length - productCode.length - 1; // -1 para check digit
-    final baseEan = '$prefix$productCode${'0' * zerosNeeded}';
-    
-    // Calcular check digit EAN-13
-    if (baseEan.length == 12) {
-      final checkDigit = _calculateEan13CheckDigit(baseEan);
-      return '$baseEan$checkDigit';
-    }
-    
-    // Se não for EAN-13, retornar como está
-    return baseEan;
-  }
-
-  /// Calcula o check digit para EAN-13
-  int _calculateEan13CheckDigit(String ean12) {
-    if (ean12.length != 12) return 0;
-    
-    int sum = 0;
-    for (int i = 0; i < 12; i++) {
-      final digit = int.parse(ean12[i]);
-      sum += digit * (i.isEven ? 1 : 3);
-    }
-    
-    final checkDigit = (10 - (sum % 10)) % 10;
-    return checkDigit;
-  }
-
-  /// Potência de 10
   double _pow10(int exp) {
     double result = 1;
     for (int i = 0; i < exp; i++) {
@@ -288,36 +213,10 @@ class VariableWeightBarcodeService {
     }
     return result;
   }
-
-  /// Lista de EANs possíveis para pesquisar o produto
-  /// Útil quando não sabemos exactamente como o produto está cadastrado
-  List<String> generatePossibleEans(String barcode) {
-    final result = parse(barcode);
-    if (result == null) return [barcode];
-
-    final eans = <String>{};
-    
-    // 1. EAN base (com peso zerado)
-    eans.add(result.productEan);
-    
-    // 2. Só o código do produto (sem prefixo nem peso)
-    eans.add(result.productCode);
-    
-    // 3. Código do produto com zeros à esquerda (para completar EAN-13)
-    final paddedCode = result.productCode.padLeft(12, '0');
-    final checkDigit = _calculateEan13CheckDigit(paddedCode);
-    eans.add('$paddedCode$checkDigit');
-    
-    // 4. Código original (caso o produto esteja cadastrado com um peso específico)
-    eans.add(barcode);
-
-    return eans.toList();
-  }
 }
 
 /// Extensão para facilitar uso no CartProvider
 extension VariableWeightBarcodeExtension on String {
-  /// Verifica se este código de barras é de peso variável
   bool isVariableWeightBarcode([VariableWeightBarcodeConfig? config]) {
     final service = VariableWeightBarcodeService(
       config: config ?? VariableWeightBarcodeConfig.defaultPortugal,
@@ -325,8 +224,8 @@ extension VariableWeightBarcodeExtension on String {
     return service.isVariableWeightBarcode(this);
   }
 
-  /// Processa este código de barras como peso variável
-  VariableWeightBarcodeResult? parseAsVariableWeight([VariableWeightBarcodeConfig? config]) {
+  VariableWeightBarcodeResult? parseAsVariableWeight(
+      [VariableWeightBarcodeConfig? config,]) {
     final service = VariableWeightBarcodeService(
       config: config ?? VariableWeightBarcodeConfig.defaultPortugal,
     );

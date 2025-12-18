@@ -21,6 +21,9 @@ class ProductSearchResult {
   bool get hasMore => offset + products.length < totalCount;
 }
 
+/// Callback para progresso do carregamento de produtos
+typedef ProductLoadProgressCallback = void Function(int loaded, int? estimated);
+
 /// Interface do datasource remoto de produtos
 abstract class ProductRemoteDataSource {
   /// Conta produtos por pesquisa
@@ -43,6 +46,24 @@ abstract class ProductRemoteDataSource {
   Future<List<ProductModel>> getAllProducts({
     int limit = 100,
     int offset = 0,
+  });
+
+  /// Obtém produtos de uma categoria específica
+  Future<List<ProductModel>> getProductsByCategory({
+    required int categoryId,
+    int limit = 50,
+    int offset = 0,
+  });
+
+  /// Carrega TODOS os produtos recursivamente (para extrair favoritos)
+  /// [onProgress] é chamado com (produtos carregados, estimativa total)
+  Future<List<ProductModel>> loadAllProductsRecursively({
+    ProductLoadProgressCallback? onProgress,
+  });
+
+  /// Carrega apenas os produtos favoritos (filtra localmente após carregar todos)
+  Future<List<ProductModel>> loadFavoriteProducts({
+    ProductLoadProgressCallback? onProgress,
   });
 }
 
@@ -90,7 +111,9 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       if (response.statusCode == 200) {
         final data = response.data;
         if (data is Map && data.containsKey('count')) {
-          final count = data['count'] as int;
+          // A API pode retornar String ou int
+          final countValue = data['count'];
+          final count = countValue is int ? countValue : int.tryParse(countValue.toString()) ?? 0;
           AppLogger.d('🔢 Total: $count produtos');
           return count;
         }
@@ -158,17 +181,13 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       AppLogger.d('📦 Response data type: ${response.data.runtimeType}');
 
       if (response.statusCode == 200 && response.data is List) {
-        final products = (response.data as List)
-            .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
-            .toList();
+        final products = _parseProductList(response.data as List);
 
-        // Calcular total estimado:
-        // - Se retornou menos que o limite, sabemos o total exato
-        // - Se retornou exatamente o limite, há potencialmente mais
+        // Calcular total estimado
         final bool hasMore = products.length == limit;
         final int estimatedTotal = hasMore 
-            ? offset + products.length + limit  // Estimativa: pelo menos mais uma página
-            : offset + products.length;         // Total exato
+            ? offset + products.length + limit
+            : offset + products.length;
 
         AppLogger.i('✅ ${products.length} produtos encontrados (estimatedTotal: $estimatedTotal, hasMore: $hasMore)');
         
@@ -218,15 +237,35 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
     }
   }
 
+  /// Parse seguro de uma lista de produtos
+  /// Ignora produtos com erros de parsing em vez de falhar todo o batch
+  List<ProductModel> _parseProductList(List<dynamic> jsonList) {
+    final products = <ProductModel>[];
+    
+    for (int i = 0; i < jsonList.length; i++) {
+      try {
+        final json = jsonList[i];
+        if (json is Map<String, dynamic>) {
+          products.add(ProductModel.fromJson(json));
+        } else {
+          AppLogger.w('⚠️ Produto $i não é um Map: ${json.runtimeType}');
+        }
+      } catch (e) {
+        // Log do erro mas continua com os outros produtos
+        AppLogger.w('⚠️ Erro ao fazer parsing do produto $i: $e');
+      }
+    }
+    
+    return products;
+  }
+
   @override
   Future<ProductModel?> getProductByBarcode(String barcode) async {
-    // Usa o novo método que retorna lista e pega o primeiro
     final products = await searchByBarcode(barcode);
     return products.isNotEmpty ? products.first : null;
   }
 
   /// Pesquisa produtos por código de barras (EAN)
-  /// Retorna lista pois pode haver múltiplos produtos com o mesmo EAN
   Future<List<ProductModel>> searchByBarcode(String barcode) async {
     try {
       final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
@@ -260,20 +299,20 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       AppLogger.d('📦 getByEAN Response type: ${response.data.runtimeType}');
 
       if (response.statusCode == 200) {
-        // A API pode retornar uma lista ou um único objeto
         if (response.data is List) {
-          final products = (response.data as List)
-              .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
-              .toList();
+          final products = _parseProductList(response.data as List);
           AppLogger.i('✅ ${products.length} produto(s) encontrado(s) por EAN: $barcode');
           return products;
         } else if (response.data is Map && !(response.data as Map).containsKey('error')) {
-          final product = ProductModel.fromJson(response.data as Map<String, dynamic>);
-          AppLogger.i('✅ 1 produto encontrado por EAN: $barcode');
-          return [product];
+          try {
+            final product = ProductModel.fromJson(response.data as Map<String, dynamic>);
+            AppLogger.i('✅ 1 produto encontrado por EAN: $barcode');
+            return [product];
+          } catch (e) {
+            AppLogger.w('⚠️ Erro ao fazer parsing do produto por EAN: $e');
+          }
         }
         
-        // Lista vazia ou erro
         AppLogger.d('📦 Nenhum produto encontrado para EAN: $barcode');
         return [];
       }
@@ -290,7 +329,6 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
         throw const TokenExpiredException();
       }
 
-      // Para outros erros, retornar lista vazia em vez de falhar
       return [];
     } catch (e) {
       AppLogger.e('Erro inesperado ao pesquisar por EAN', error: e);
@@ -332,9 +370,14 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
             AppLogger.d('Produto não encontrado');
             return null;
           }
-          final product = ProductModel.fromJson(response.data as Map<String, dynamic>);
-          AppLogger.i('✅ Produto encontrado por referência');
-          return product;
+          try {
+            final product = ProductModel.fromJson(response.data as Map<String, dynamic>);
+            AppLogger.i('✅ Produto encontrado por referência');
+            return product;
+          } catch (e) {
+            AppLogger.w('⚠️ Erro ao fazer parsing do produto: $e');
+            return null;
+          }
         }
         return null;
       }
@@ -398,10 +441,7 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       );
 
       if (response.statusCode == 200 && response.data is List) {
-        final products = (response.data as List)
-            .map((json) => ProductModel.fromJson(json as Map<String, dynamic>))
-            .toList();
-
+        final products = _parseProductList(response.data as List);
         AppLogger.i('✅ ${products.length} produtos carregados');
         return products;
       }
@@ -430,5 +470,224 @@ class ProductRemoteDataSourceImpl implements ProductRemoteDataSource {
       if (e is AppException) rethrow;
       throw ServerException(e.toString());
     }
+  }
+
+  @override
+  Future<List<ProductModel>> getProductsByCategory({
+    required int categoryId,
+    int limit = 50,
+    int offset = 0,
+  }) async {
+    try {
+      final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
+          ApiConstants.defaultMoloniApiUrl;
+      final accessToken = await storage.read(key: ApiConstants.keyAccessToken);
+      final companyId = await storage.read(key: ApiConstants.keyCompanyId);
+
+      if (accessToken == null || companyId == null) {
+        throw const AuthenticationException('Autenticação inválida');
+      }
+
+      final url = '$apiUrl/products/getAll/?access_token=$accessToken';
+
+      AppLogger.moloniApi(
+        'products/getAll (category)',
+        data: {
+          'company_id': companyId,
+          'category_id': categoryId,
+          'qty': limit,
+          'offset': offset,
+        },
+      );
+
+      final response = await dio.post(
+        url,
+        data: {
+          'company_id': companyId,
+          'category_id': categoryId,
+          'qty': limit,
+          'offset': offset,
+        },
+        options: Options(contentType: Headers.formUrlEncodedContentType),
+      );
+
+      if (response.statusCode == 200 && response.data is List) {
+        final products = _parseProductList(response.data as List);
+        AppLogger.d('✅ ${products.length} produtos da categoria $categoryId');
+        return products;
+      }
+
+      return [];
+    } on DioException catch (e) {
+      AppLogger.e('Erro ao carregar produtos da categoria', error: e);
+
+      if (e.response?.statusCode == 401) {
+        throw const TokenExpiredException();
+      }
+
+      return [];
+    } catch (e) {
+      AppLogger.e('Erro inesperado ao carregar produtos da categoria', error: e);
+      return [];
+    }
+  }
+
+  @override
+  Future<List<ProductModel>> loadAllProductsRecursively({
+    ProductLoadProgressCallback? onProgress,
+  }) async {
+    final allProducts = <ProductModel>[];
+    int offset = 0;
+    const int batchSize = 50;
+    int? estimatedTotal;
+
+    AppLogger.i('🔄 Iniciando carregamento recursivo de todos os produtos...');
+
+    try {
+      final apiUrl = await storage.read(key: ApiConstants.keyApiUrl) ??
+          ApiConstants.defaultMoloniApiUrl;
+      final accessToken = await storage.read(key: ApiConstants.keyAccessToken);
+      final companyId = await storage.read(key: ApiConstants.keyCompanyId);
+
+      if (accessToken == null || companyId == null) {
+        throw const AuthenticationException('Autenticação inválida');
+      }
+
+      // Tentar obter contagem total
+      try {
+        final countUrl = '$apiUrl/products/countBySearch/?access_token=$accessToken';
+        final countResponse = await dio.post(
+          countUrl,
+          data: {
+            'company_id': companyId,
+            'search': '',
+          },
+          options: Options(contentType: Headers.formUrlEncodedContentType),
+        );
+        
+        if (countResponse.statusCode == 200 && countResponse.data is Map) {
+          final countValue = countResponse.data['count'];
+          estimatedTotal = countValue is int 
+              ? countValue 
+              : int.tryParse(countValue.toString());
+          AppLogger.d('📊 Total estimado de produtos: $estimatedTotal');
+        }
+      } catch (e) {
+        AppLogger.w('⚠️ Não foi possível obter contagem total: $e');
+      }
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // USAR products/getAll SEM category_id (funciona no Moloni)
+      // ═══════════════════════════════════════════════════════════════════════
+      while (true) {
+        final url = '$apiUrl/products/getAll/?access_token=$accessToken';
+
+        AppLogger.d('📡 A carregar lote: offset=$offset, qty=$batchSize');
+
+        final response = await dio.post(
+          url,
+          data: {
+            'company_id': companyId,
+            'qty': batchSize,
+            'offset': offset,
+            // NÃO enviar category_id - isto retorna TODOS os produtos
+          },
+          options: Options(contentType: Headers.formUrlEncodedContentType),
+        );
+
+        AppLogger.d('📦 Response status: ${response.statusCode}');
+        AppLogger.d('📦 Response type: ${response.data.runtimeType}');
+
+        // Log do primeiro elemento para debug
+        if (response.data is List && (response.data as List).isNotEmpty) {
+          final firstItem = (response.data as List).first;
+          AppLogger.d('📦 Primeiro item tipo: ${firstItem.runtimeType}');
+          if (firstItem is Map) {
+            AppLogger.d('📦 Primeiro produto: ${firstItem['name']} (ID: ${firstItem['product_id']})');
+          }
+        }
+
+        if (response.statusCode == 200 && response.data is List) {
+          final batch = _parseProductList(response.data as List);
+
+          allProducts.addAll(batch);
+
+          // Notificar progresso
+          onProgress?.call(allProducts.length, estimatedTotal);
+
+          AppLogger.d('📦 Lote carregado: ${batch.length} produtos (total: ${allProducts.length})');
+
+          // Se veio menos que o batch size, chegámos ao fim
+          if (batch.length < batchSize) {
+            AppLogger.i('✅ Carregamento completo: ${allProducts.length} produtos totais');
+            break;
+          }
+
+          offset += batchSize;
+
+          // Pequena pausa para não sobrecarregar a API
+          await Future.delayed(const Duration(milliseconds: 100));
+        } else {
+          // Log da resposta para debug
+          AppLogger.w('⚠️ Resposta inesperada: ${response.data}');
+          break;
+        }
+      }
+
+      // Log de alguns produtos para verificar o campo pos_favorite
+      if (allProducts.isNotEmpty) {
+        AppLogger.d('📊 Amostra de produtos carregados:');
+        for (final p in allProducts.take(5)) {
+          AppLogger.d('   - ${p.name}: posFavorite=${p.posFavorite}');
+        }
+      }
+
+      return allProducts;
+    } on DioException catch (e) {
+      AppLogger.e('❌ Erro ao carregar produtos recursivamente', error: e);
+
+      if (e.response?.statusCode == 401) {
+        throw const TokenExpiredException();
+      }
+
+      // Retornar o que já foi carregado
+      return allProducts;
+    } catch (e) {
+      AppLogger.e('❌ Erro inesperado ao carregar produtos', error: e);
+      if (e is AppException) rethrow;
+      
+      // Retornar o que já foi carregado
+      return allProducts;
+    }
+  }
+
+  @override
+  Future<List<ProductModel>> loadFavoriteProducts({
+    ProductLoadProgressCallback? onProgress,
+  }) async {
+    AppLogger.i('⭐ A carregar produtos favoritos...');
+
+    // Carregar todos os produtos
+    final allProducts = await loadAllProductsRecursively(onProgress: onProgress);
+
+    // Filtrar apenas os favoritos
+    final favorites = allProducts.where((p) => p.posFavorite).toList();
+
+    AppLogger.i('⭐ ${favorites.length} produtos favoritos encontrados de ${allProducts.length} totais');
+
+    // Log dos favoritos encontrados
+    if (favorites.isNotEmpty) {
+      AppLogger.d('⭐ Favoritos encontrados:');
+      for (final fav in favorites.take(10)) {
+        AppLogger.d('   - ${fav.name} (ID: ${fav.id})');
+      }
+      if (favorites.length > 10) {
+        AppLogger.d('   ... e mais ${favorites.length - 10}');
+      }
+    } else {
+      AppLogger.w('⚠️ Nenhum produto tem pos_favorite=true');
+    }
+
+    return favorites;
   }
 }

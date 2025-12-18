@@ -1,3 +1,4 @@
+import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/products/data/models/tax_model.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/tax.dart';
@@ -17,6 +18,7 @@ class ProductModel extends Product {
     required super.taxes,
     super.hasStock,
     super.stock,
+    super.posFavorite,
   });
 
   /// Converte Entity para Model
@@ -34,16 +36,59 @@ class ProductModel extends Product {
       taxes: entity.taxes,
       hasStock: entity.hasStock,
       stock: entity.stock,
+      posFavorite: entity.posFavorite,
     );
   }
 
   /// Cria model a partir de JSON (API Moloni)
   factory ProductModel.fromJson(Map<String, dynamic> json) {
-    final taxesList = (json['taxes'] as List?)
-            ?.map((tax) => TaxModel.fromJson(tax as Map<String, dynamic>))
+    // ═══════════════════════════════════════════════════════════════════════
+    // PARSING ROBUSTO DAS TAXES
+    // A API pode retornar: List, null, ou até String vazia
+    // ═══════════════════════════════════════════════════════════════════════
+    List<Tax> taxesList = [];
+    try {
+      final taxesData = json['taxes'];
+      if (taxesData != null && taxesData is List && taxesData.isNotEmpty) {
+        taxesList = taxesData
+            .where((tax) => tax is Map<String, dynamic>)
+            .map((tax) => TaxModel.fromJson(tax as Map<String, dynamic>))
             .cast<Tax>()
-            .toList() ??
-        [];
+            .toList();
+      }
+    } catch (e) {
+      AppLogger.w('⚠️ Erro ao fazer parsing das taxes: $e');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PARSING ROBUSTO DO measurement_unit
+    // A API pode retornar: Map, String, ou null
+    // ═══════════════════════════════════════════════════════════════════════
+    String? measureUnit;
+    try {
+      final measurementUnit = json['measurement_unit'];
+      if (measurementUnit is Map<String, dynamic>) {
+        measureUnit = measurementUnit['name'] as String?;
+      } else if (measurementUnit is String) {
+        measureUnit = measurementUnit;
+      }
+      // Fallback para measure_unit
+      measureUnit ??= json['measure_unit'] as String?;
+    } catch (e) {
+      AppLogger.w('⚠️ Erro ao fazer parsing do measurement_unit: $e');
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // PARSING DO pos_favorite
+    // A API Moloni pode retornar: 1, 0, "1", "0", true, false, ou null
+    // ═══════════════════════════════════════════════════════════════════════
+    final posFavoriteValue = json['pos_favorite'];
+    final isPOSFavorite = _parseBool(posFavoriteValue);
+    
+    // DEBUG: Log para verificar o valor (remover depois de confirmar que funciona)
+    if (isPOSFavorite) {
+      AppLogger.d('⭐ Produto FAVORITO: ${json['name']} (pos_favorite=$posFavoriteValue)');
+    }
 
     return ProductModel(
       id: json['product_id'] as int? ?? 0,
@@ -53,12 +98,12 @@ class ProductModel extends Product {
       price: _parseDouble(json['price']),
       summary: json['summary'] as String?,
       image: json['image'] as String?,
-      measureUnit: json['measurement_unit']?['name'] as String? ?? 
-                   json['measure_unit'] as String?,
+      measureUnit: measureUnit,
       categoryId: json['category_id'] as int? ?? 0,
       taxes: taxesList,
       hasStock: _parseBool(json['has_stock']),
       stock: _parseDouble(json['stock']),
+      posFavorite: isPOSFavorite,
     );
   }
 
@@ -93,9 +138,20 @@ class ProductModel extends Product {
       'image': image,
       'measure_unit': measureUnit,
       'category_id': categoryId,
-      'taxes': taxes.map((t) => (t as TaxModel).toJson()).toList(),
+      'taxes': taxes.map((t) {
+        if (t is TaxModel) {
+          return t.toJson();
+        }
+        // Fallback para Tax entity
+        return {
+          'tax_id': t.id,
+          'name': t.name,
+          'value': t.value,
+        };
+      }).toList(),
       'has_stock': hasStock ? 1 : 0,
       'stock': stock,
+      'pos_favorite': posFavorite ? 1 : 0,
     };
   }
 
@@ -114,6 +170,7 @@ class ProductModel extends Product {
       taxes: taxes,
       hasStock: hasStock,
       stock: stock,
+      posFavorite: posFavorite,
     );
   }
 
@@ -131,6 +188,7 @@ class ProductModel extends Product {
     List<Tax>? taxes,
     bool? hasStock,
     double? stock,
+    bool? posFavorite,
   }) {
     return ProductModel(
       id: id ?? this.id,
@@ -145,6 +203,7 @@ class ProductModel extends Product {
       taxes: taxes ?? this.taxes,
       hasStock: hasStock ?? this.hasStock,
       stock: stock ?? this.stock,
+      posFavorite: posFavorite ?? this.posFavorite,
     );
   }
 }

@@ -142,7 +142,7 @@ class BarcodeScannerNotifier extends StateNotifier<BarcodeScannerState> {
       if (variableWeightResult != null) {
         AppLogger.i('⚖️ Código de peso variável detectado:');
         AppLogger.i('   - Código produto: ${variableWeightResult.productCode}');
-        AppLogger.i('   - EAN pesquisa: ${variableWeightResult.productEan}');
+        AppLogger.i('   - EAN pesquisa: ${variableWeightResult.originalBarcode}');
         AppLogger.i('   - Peso: ${variableWeightResult.weight.toStringAsFixed(3)} kg');
         
         // Guardar resultado de peso variável no estado
@@ -187,30 +187,32 @@ class BarcodeScannerNotifier extends StateNotifier<BarcodeScannerState> {
   Future<void> _searchVariableWeightProduct(VariableWeightBarcodeResult vwResult) async {
     final dataSource = productDataSource as ProductRemoteDataSourceImpl;
     
+    final products = await dataSource.searchByBarcode(vwResult.productCode);
+
     // Gerar lista de EANs possíveis para pesquisar
-    final possibleEans = variableWeightService.generatePossibleEans(vwResult.originalBarcode);
+    // final possibleEans = variableWeightService.generatePossibleEans(vwResult.originalBarcode);
     
-    AppLogger.d('🔍 A pesquisar produto com EANs: $possibleEans');
+    // AppLogger.d('🔍 A pesquisar produto com EANs: $possibleEans');
     
     // Tentar cada EAN possível
-    for (final ean in possibleEans) {
-      AppLogger.d('   Tentando EAN: $ean');
+    // for (final ean in possibleEans) {
+    //   AppLogger.d('   Tentando EAN: $ean');
       
-      final products = await dataSource.searchByBarcode(ean);
+    //   final products = await dataSource.searchByBarcode(ean);
       
       if (products.isNotEmpty) {
         if (products.length == 1) {
-          AppLogger.i('✅ Produto encontrado com EAN: $ean');
+          // AppLogger.i('✅ Produto encontrado com EAN: $vwResult.productcode');
           _handleSingleProduct(products.first, quantity: vwResult.quantity);
           return;
         } else {
           // Múltiplos produtos - mostrar na grid (o utilizador escolhe)
-          AppLogger.i('⚠️ ${products.length} produtos encontrados para EAN: $ean');
+          // AppLogger.i('⚠️ ${products.length} produtos encontrados para EAN: $ean');
           _handleMultipleProducts(products);
           return;
         }
       }
-    }
+    // }
     
     // Tentar também por referência usando o código do produto
     AppLogger.d('   Tentando por referência: ${vwResult.productCode}');

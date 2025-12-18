@@ -123,8 +123,13 @@ class ProductNotifier extends StateNotifier<ProductState> {
 
       AppLogger.i('✅ ${result.products.length} de $actualTotal produtos');
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // CORRECÇÃO: Converter ProductModel para Product (entity)
+      // ═══════════════════════════════════════════════════════════════════════
+      final productEntities = result.products.map((m) => m.toEntity()).toList();
+
       state = state.copyWith(
-        products: result.products,
+        products: productEntities,
         isLoading: false,
         currentOffset: result.products.length,
         totalCount: actualTotal,
@@ -141,15 +146,19 @@ class ProductNotifier extends StateNotifier<ProductState> {
   }
 
   /// Pesquisa produto por código de barras
+  /// Retorna Product (entity) ou null
   Future<Product?> searchByBarcode(String barcode) async {
     try {
       AppLogger.i('🔍 A pesquisar por código de barras: $barcode');
 
-      final product = await _dataSource.getProductByBarcode(barcode);
+      final productModel = await _dataSource.getProductByBarcode(barcode);
 
-      if (product != null) {
-        AppLogger.i('✅ Produto encontrado: ${product.name}');
-        return product;
+      if (productModel != null) {
+        AppLogger.i('✅ Produto encontrado: ${productModel.name}');
+        // ═══════════════════════════════════════════════════════════════════
+        // CORRECÇÃO: Converter ProductModel para Product (entity)
+        // ═══════════════════════════════════════════════════════════════════
+        return productModel.toEntity();
       }
 
       AppLogger.d('⚠️ Produto não encontrado');
@@ -192,8 +201,13 @@ class ProductNotifier extends StateNotifier<ProductState> {
           ? newOffset 
           : state.totalCount;
 
+      // ═══════════════════════════════════════════════════════════════════════
+      // CORRECÇÃO: Converter ProductModel para Product (entity)
+      // ═══════════════════════════════════════════════════════════════════════
+      final newProducts = result.products.map((m) => m.toEntity()).toList();
+
       state = state.copyWith(
-        products: [...state.products, ...result.products],
+        products: [...state.products, ...newProducts],
         isLoadingMore: false,
         currentOffset: newOffset,
         totalCount: actualTotal,
@@ -218,6 +232,7 @@ class ProductNotifier extends StateNotifier<ProductState> {
   }
 
   /// Define um produto único scaneado (para mostrar em destaque)
+  /// Aceita ProductModel e converte internamente para Product
   void setScannedProduct(ProductModel product) {
     AppLogger.i('📦 Produto scaneado: ${product.name}');
     
@@ -233,6 +248,7 @@ class ProductNotifier extends StateNotifier<ProductState> {
 
   /// Define resultados de pesquisa por barcode (múltiplos produtos)
   /// Usado quando o scanner encontra múltiplos produtos
+  /// Aceita List<ProductModel> e converte internamente para List<Product>
   void setBarcodeResults(List<ProductModel> products) {
     AppLogger.i('📦 A definir ${products.length} produtos do barcode na grid');
     

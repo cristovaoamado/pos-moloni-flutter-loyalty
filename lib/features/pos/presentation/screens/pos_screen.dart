@@ -23,6 +23,7 @@ import 'package:pos_moloni_app/features/pos/presentation/widgets/product_search_
 import 'package:pos_moloni_app/features/pos/presentation/widgets/receipt_panel.dart';
 import 'package:pos_moloni_app/features/pos/presentation/widgets/item_options_dialog.dart';
 import 'package:pos_moloni_app/features/pos/presentation/widgets/customer_search_dialog.dart';
+import 'package:pos_moloni_app/features/favorites/presentation/screens/favorites_screen.dart';
 
 /// Tela Principal do POS
 class PosScreen extends ConsumerStatefulWidget {
@@ -557,6 +558,17 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     }
   }
 
+    // ==================== FAVORITOS ====================
+
+  void _openFavoritesScreen() {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const FavoritesScreen()),
+    ).then((_) {
+      if (mounted) _requestScannerFocus();
+    });
+  }
+
+
   // ==================== NAVEGAÇÃO PARA LOGIN ====================
 
   void _navigateToLogin() {
@@ -951,6 +963,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               ),
             ),
           ),
+          // BOTÃO FAVORITOS (NOVO)
+        // ═══════════════════════════════════════════════════════════════════
+        IconButton(
+          icon: const Icon(Icons.star),
+          onPressed: _openFavoritesScreen,
+          tooltip: 'Gerir Favoritos',
+        ),
         // Botão definições
         IconButton(
           icon: const Icon(Icons.settings),
