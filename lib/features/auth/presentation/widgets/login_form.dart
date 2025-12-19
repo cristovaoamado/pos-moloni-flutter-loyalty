@@ -17,8 +17,18 @@ class _LoginFormState extends ConsumerState<LoginForm> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   
-  bool _obscurePassword = true;
-  bool _rememberMe = false;
+  // Password sempre oculta (sem botão para mostrar)
+  final bool _obscurePassword = true;
+
+  @override
+  void initState() {
+    super.initState();
+    // ═══════════════════════════════════════════════════════════════════
+    // VALORES PRÉ-PREENCHIDOS
+    // ═══════════════════════════════════════════════════════════════════
+    _usernameController.text = 'madalena.ac@gmail.com';
+    _passwordController.text = 'lojam2019';
+  }
 
   @override
   void dispose() {
@@ -36,16 +46,12 @@ class _LoginFormState extends ConsumerState<LoginForm> {
     // Esconder teclado
     FocusScope.of(context).unfocus();
 
-    // Executar login
-    final success = await ref.read(authProvider.notifier).login(
-          username: _usernameController.text.trim(),
-          password: _passwordController.text,
-        );
-
-    // Se login bem-sucedido e rememberMe está ativo, guardar username
-    if (success && _rememberMe) {
-      // TO DO: Guardar username para preencher automaticamente próxima vez
-    }
+    // Executar login (sempre guarda credenciais para auto-login)
+    await ref.read(authProvider.notifier).login(
+      username: _usernameController.text.trim(),
+      password: _passwordController.text,
+      saveCredentials: true,
+    );
   }
 
   @override
@@ -80,7 +86,7 @@ class _LoginFormState extends ConsumerState<LoginForm> {
           ),
           const SizedBox(height: 16),
 
-          // Campo Password
+          // Campo Password - SEM botão para mostrar password
           TextFormField(
             controller: _passwordController,
             enabled: !isLoading,
@@ -89,16 +95,7 @@ class _LoginFormState extends ConsumerState<LoginForm> {
               labelText: 'Password',
               hintText: 'Digite sua password',
               prefixIcon: const Icon(Icons.lock_outline),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                ),
-                onPressed: () {
-                  setState(() {
-                    _obscurePassword = !_obscurePassword;
-                  });
-                },
-              ),
+              // SEM suffixIcon (botão de mostrar password removido)
               border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
@@ -109,38 +106,6 @@ class _LoginFormState extends ConsumerState<LoginForm> {
               // Ao pressionar Enter, fazer login
               _handleLogin();
             },
-          ),
-          const SizedBox(height: 8),
-
-          // Remember Me
-          Row(
-            children: [
-              Checkbox(
-                value: _rememberMe,
-                onChanged: isLoading
-                    ? null
-                    : (value) {
-                        setState(() {
-                          _rememberMe = value ?? false;
-                        });
-                      },
-              ),
-              Expanded(
-                child: GestureDetector(
-                  onTap: isLoading
-                      ? null
-                      : () {
-                          setState(() {
-                            _rememberMe = !_rememberMe;
-                          });
-                        },
-                  child: Text(
-                    'Lembrar utilizador',
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                ),
-              ),
-            ],
           ),
           const SizedBox(height: 24),
 

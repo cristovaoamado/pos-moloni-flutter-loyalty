@@ -26,10 +26,8 @@ class CheckoutDialog extends ConsumerStatefulWidget {
   final Customer customer;
   final List<CartItem> items;
   final double total;
-
   /// Desconto global em percentagem (0-100)
   final double globalDiscount;
-
   /// Valor do desconto global em EUR
   final double globalDiscountValue;
 
@@ -40,7 +38,7 @@ class CheckoutDialog extends ConsumerStatefulWidget {
 class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   final _amountController = TextEditingController();
   final _amountFocus = FocusNode();
-
+  
   PaymentMethod? _selectedPaymentMethod;
   double _amountPaid = 0;
   bool _isProcessing = false;
@@ -49,25 +47,29 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   @override
   void initState() {
     super.initState();
+    // Pré-preencher com o total
     _amountController.text = widget.total.toStringAsFixed(2);
     _amountPaid = widget.total;
-
+    
+    // Pré-selecionar Numerário (ou primeiro método disponível)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final methods = ref.read(checkoutProvider).paymentMethods;
       if (methods.isNotEmpty && _selectedPaymentMethod == null) {
+        // Procurar Numerário primeiro
         final numerario = methods.where((m) {
           final name = m.name.toLowerCase();
-          return name.contains('numerario') ||
-              name.contains('numerário') ||
-              name.contains('dinheiro') ||
-              name.contains('cash');
+          return name.contains('numerario') || 
+                 name.contains('numerário') || 
+                 name.contains('dinheiro') ||
+                 name.contains('cash');
         }).firstOrNull;
-
+        
         setState(() {
           _selectedPaymentMethod = numerario ?? methods.first;
         });
       }
-
+      
+      // Focus no campo de valor e selecionar todo o texto
       _amountFocus.requestFocus();
       _amountController.selection = TextSelection(
         baseOffset: 0,
@@ -84,8 +86,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   }
 
   double get _change => (_amountPaid - widget.total).clamp(0, double.infinity);
-  bool get _canFinalize =>
-      _amountPaid >= widget.total && _selectedPaymentMethod != null;
+  bool get _canFinalize => _amountPaid >= widget.total && _selectedPaymentMethod != null;
 
   Future<void> _processPayment() async {
     if (!_canFinalize || _isProcessing) return;
@@ -96,24 +97,24 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
     });
 
     try {
-      // Passar descontos ao processCheckout
       final success = await ref.read(checkoutProvider.notifier).processCheckout(
-            documentTypeOption: widget.documentTypeOption,
-            customer: widget.customer,
-            items: widget.items,
-            payments: [
-              PaymentInfo(
-                methodId: _selectedPaymentMethod!.id,
-                value: widget.total,
-              ),
-            ],
-            globalDiscount: widget.globalDiscount,
-            globalDiscountValue: widget.globalDiscountValue,
-          );
+        documentTypeOption: widget.documentTypeOption,
+        customer: widget.customer,
+        items: widget.items,
+        payments: [
+          PaymentInfo(
+            methodId: _selectedPaymentMethod!.id,
+            value: widget.total,
+          ),
+        ],
+        globalDiscount: widget.globalDiscount,
+        globalDiscountValue: widget.globalDiscountValue,
+      );
 
       if (success && mounted) {
         Navigator.of(context).pop(true);
-
+        
+        // Mostrar diálogo de sucesso
         final checkoutState = ref.read(checkoutProvider);
         if (checkoutState.document != null) {
           showDialog(
@@ -156,6 +157,8 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   void _setQuickAmount(double amount) {
     _amountController.text = amount.toStringAsFixed(2);
     _onAmountChanged(amount.toString());
+    
+    // Manter focus e selecionar todo o texto
     _amountFocus.requestFocus();
     _amountController.selection = TextSelection(
       baseOffset: 0,
@@ -166,6 +169,8 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   void _setExactAmount() {
     _amountController.text = widget.total.toStringAsFixed(2);
     _onAmountChanged(widget.total.toString());
+    
+    // Manter focus e selecionar todo o texto
     _amountFocus.requestFocus();
     _amountController.selection = TextSelection(
       baseOffset: 0,
@@ -176,8 +181,6 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   @override
   Widget build(BuildContext context) {
     final paymentMethods = ref.watch(checkoutProvider).paymentMethods;
-    final hasDiscount =
-        widget.globalDiscount > 0 || widget.globalDiscountValue > 0;
 
     return Dialog(
       child: Container(
@@ -193,8 +196,6 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
               padding: const EdgeInsets.all(16),
               decoration: BoxDecoration(
                 color: Theme.of(context).colorScheme.primary,
-                borderRadius:
-                    const BorderRadius.vertical(top: Radius.circular(12)),
               ),
               child: Row(
                 children: [
@@ -245,18 +246,21 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
 
                     const SizedBox(height: 20),
 
-                    // Total a pagar (com desconto se existir)
+                    // Total a pagar
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context).colorScheme.primaryContainer,
-                        borderRadius: BorderRadius.circular(12),
+                        color: const Color(0xFFD4A574), // Ouro velho / olive torrado
+                        borderRadius: BorderRadius.circular(0),
                       ),
                       child: Column(
                         children: [
-                          const Text(
+                          Text(
                             'Total a Pagar',
-                            style: TextStyle(fontSize: 14),
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.brown.shade900,
+                            ),
                           ),
                           const SizedBox(height: 4),
                           Text(
@@ -264,112 +268,71 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                             style: TextStyle(
                               fontSize: 32,
                               fontWeight: FontWeight.bold,
-                              color: Theme.of(context)
-                                  .colorScheme
-                                  .onPrimaryContainer,
+                              color: Colors.brown.shade900,
                             ),
                           ),
-                          // Mostrar desconto aplicado
-                          if (hasDiscount) ...[
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 6,),
-                              decoration: BoxDecoration(
-                                color: Colors.green.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.discount,
-                                      size: 16, color: Colors.green,),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Desconto: ${widget.globalDiscount.toStringAsFixed(0)}% (-${widget.globalDiscountValue.toStringAsFixed(2)} €)',
-                                    style: const TextStyle(
-                                      fontSize: 12,
-                                      color: Colors.green,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ),
 
                     const SizedBox(height: 20),
 
-                    // Métodos de pagamento
+                    // Método de pagamento
                     const Text(
                       'Método de Pagamento',
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
                     const SizedBox(height: 8),
+                    
+                    // Usar Wrap para métodos de pagamento (evita overflow)
                     Wrap(
                       spacing: 8,
                       runSpacing: 8,
                       children: paymentMethods.map((method) {
-                        final isSelected =
-                            _selectedPaymentMethod?.id == method.id;
-                        return InkWell(
-                          onTap: () =>
-                              setState(() => _selectedPaymentMethod = method),
-                          borderRadius: BorderRadius.circular(12),
-                          child: AnimatedContainer(
-                            duration: const Duration(milliseconds: 200),
-                            width: 100,
-                            padding: const EdgeInsets.symmetric(
-                                vertical: 12, horizontal: 8,),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Theme.of(context)
-                                      .colorScheme
-                                      .surfaceContainerHighest,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: isSelected
-                                    ? Theme.of(context).colorScheme.primary
-                                    : Theme.of(context)
-                                        .colorScheme
-                                        .outline
-                                        .withValues(alpha: 0.3),
-                                width: isSelected ? 2 : 1,
+                        final isSelected = _selectedPaymentMethod?.id == method.id;
+                        return SizedBox(
+                          width: paymentMethods.length <= 3 
+                              ? (500 - 40 - (paymentMethods.length - 1) * 8) / paymentMethods.length
+                              : (500 - 40 - 8) / 2, // 2 por linha se mais de 3
+                          child: Material(
+                            color: isSelected
+                                ? Theme.of(context).colorScheme.primary
+                                : Theme.of(context).colorScheme.surfaceContainerHighest,
+                            borderRadius: BorderRadius.circular(8),
+                            child: InkWell(
+                              onTap: () {
+                                setState(() => _selectedPaymentMethod = method);
+                              },
+                              borderRadius: BorderRadius.circular(8),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      _getPaymentIcon(method.name),
+                                      size: 28,
+                                      color: isSelected
+                                          ? Colors.white
+                                          : Theme.of(context).colorScheme.onSurfaceVariant,
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Text(
+                                      method.name,
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.w500,
+                                        fontSize: 13,
+                                        color: isSelected
+                                            ? Colors.white
+                                            : Theme.of(context).colorScheme.onSurfaceVariant,
+                                      ),
+                                      textAlign: TextAlign.center,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _getPaymentIcon(method.name),
-                                  color: isSelected
-                                      ? Colors.white
-                                      : Theme.of(context)
-                                          .colorScheme
-                                          .onSurfaceVariant,
-                                  size: 24,
-                                ),
-                                const SizedBox(height: 8),
-                                Text(
-                                  method.name,
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    fontSize: 13,
-                                    color: isSelected
-                                        ? Colors.white
-                                        : Theme.of(context)
-                                            .colorScheme
-                                            .onSurfaceVariant,
-                                  ),
-                                  textAlign: TextAlign.center,
-                                  maxLines: 2,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ],
                             ),
                           ),
                         );
@@ -390,8 +353,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                           child: TextField(
                             controller: _amountController,
                             focusNode: _amountFocus,
-                            keyboardType: const TextInputType.numberWithOptions(
-                                decimal: true,),
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             textAlign: TextAlign.center,
                             style: const TextStyle(
                               fontSize: 24,
@@ -404,8 +366,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                               fillColor: Theme.of(context).colorScheme.surface,
                             ),
                             inputFormatters: [
-                              FilteringTextInputFormatter.allow(
-                                  RegExp(r'[\d.,]'),),
+                              FilteringTextInputFormatter.allow(RegExp(r'[\d.,]')),
                             ],
                             onChanged: _onAmountChanged,
                             onSubmitted: (_) {
@@ -434,19 +395,13 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                             child: ElevatedButton(
                               onPressed: () => _setQuickAmount(amount),
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .secondaryContainer,
-                                foregroundColor: Theme.of(context)
-                                    .colorScheme
-                                    .onSecondaryContainer,
-                                padding:
-                                    const EdgeInsets.symmetric(vertical: 12),
+                                backgroundColor: Theme.of(context).colorScheme.secondaryContainer,
+                                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
                               ),
                               child: Text(
                                 '${amount.toInt()}€',
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold,),
+                                style: const TextStyle(fontWeight: FontWeight.bold),
                               ),
                             ),
                           ),
@@ -494,8 +449,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.error_outline,
-                                color: Colors.red.shade700,),
+                            Icon(Icons.error_outline, color: Colors.red.shade700),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
@@ -523,15 +477,12 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
               child: Row(
                 children: [
                   TextButton(
-                    onPressed: _isProcessing
-                        ? null
-                        : () => Navigator.of(context).pop(false),
+                    onPressed: _isProcessing ? null : () => Navigator.of(context).pop(false),
                     child: const Text('Cancelar'),
                   ),
                   const Spacer(),
                   ElevatedButton.icon(
-                    onPressed:
-                        _canFinalize && !_isProcessing ? _processPayment : null,
+                    onPressed: _canFinalize && !_isProcessing ? _processPayment : null,
                     icon: _isProcessing
                         ? const SizedBox(
                             width: 20,
@@ -543,8 +494,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12,),
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                     ),
                   ),
                 ],
@@ -558,19 +508,20 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
 
   IconData _getPaymentIcon(String name) {
     final lowerName = name.toLowerCase();
-    if (lowerName.contains('numerário') ||
-        lowerName.contains('numerario') ||
+    if (lowerName.contains('numerário') || 
+        lowerName.contains('numerario') || 
         lowerName.contains('dinheiro')) {
       return Icons.payments;
-    } else if (lowerName.contains('multibanco') ||
-        lowerName.contains('mb') ||
-        lowerName.contains('terminal')) {
+    } else if (lowerName.contains('multibanco') || 
+               lowerName.contains('mb') ||
+               lowerName.contains('terminal')) {
       return Icons.credit_card;
-    } else if (lowerName.contains('transferência') ||
-        lowerName.contains('transferencia') ||
-        lowerName.contains('iban')) {
+    } else if (lowerName.contains('transferência') || 
+               lowerName.contains('transferencia') ||
+               lowerName.contains('iban')) {
       return Icons.account_balance;
-    } else if (lowerName.contains('mbway') || lowerName.contains('mb way')) {
+    } else if (lowerName.contains('mbway') || 
+               lowerName.contains('mb way')) {
       return Icons.phone_android;
     } else if (lowerName.contains('cheque')) {
       return Icons.description;

@@ -51,8 +51,8 @@ class ProductModel extends Product {
       final taxesData = json['taxes'];
       if (taxesData != null && taxesData is List && taxesData.isNotEmpty) {
         taxesList = taxesData
-            .where((tax) => tax is Map<String, dynamic>)
-            .map((tax) => TaxModel.fromJson(tax as Map<String, dynamic>))
+            .whereType<Map<String, dynamic>>()
+            .map((tax) => TaxModel.fromJson(tax))
             .cast<Tax>()
             .toList();
       }

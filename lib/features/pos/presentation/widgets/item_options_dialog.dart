@@ -188,53 +188,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
     return formatted;
   }
 
-  /// Converte nome da unidade para abreviatura
-  String _getUnitAbbreviation(String unit) {
-    final lowerUnit = unit.toLowerCase();
-    
-    // Mapeamento de unidades para abreviaturas
-    const abbreviations = {
-      'quilograma': 'Kg',
-      'quilogramas': 'Kg',
-      'kilogram': 'Kg',
-      'kilograma': 'Kg',
-      'kg': 'Kg',
-      'grama': 'g',
-      'gramas': 'g',
-      'g': 'g',
-      'litro': 'Lt',
-      'litros': 'Lt',
-      'lt': 'Lt',
-      'l': 'Lt',
-      'mililitro': 'ml',
-      'mililitros': 'ml',
-      'ml': 'ml',
-      'metro': 'm',
-      'metros': 'm',
-      'm': 'm',
-      'centimetro': 'cm',
-      'centimetros': 'cm',
-      'cm': 'cm',
-      'unidade': 'Un',
-      'unidades': 'Un',
-      'un': 'Un',
-      'uni': 'Un',
-      'caixa': 'Cx',
-      'caixas': 'Cx',
-      'cx': 'Cx',
-      'pacote': 'Pct',
-      'pacotes': 'Pct',
-      'pct': 'Pct',
-      'par': 'Par',
-      'pares': 'Par',
-      'duzia': 'Dz',
-      'duzias': 'Dz',
-      'dz': 'Dz',
-    };
-
-    return abbreviations[lowerUnit] ?? unit;
-  }
-
   void _updateQuantity(double delta) {
     setState(() {
       _currentQty = (_currentQty + delta).clamp(0.01, 9999.0);
@@ -262,6 +215,9 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
         }
       },
       child: Dialog(
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.zero, // SEM cantos arredondados
+        ),
         child: Container(
           width: 400,
           height: 400,
@@ -271,6 +227,8 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
               _buildHeader(context),
               TabBar(
                 controller: _tabController,
+                labelColor: Theme.of(context).colorScheme.primary,
+                indicatorColor: Theme.of(context).colorScheme.primary,
                 tabs: const [
                   Tab(text: 'Quantidade'),
                   Tab(text: 'Desconto'),
@@ -296,11 +254,12 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildHeader(BuildContext context) {
+    // IGUAL AO CHECKOUT: usa colorScheme.primary com texto branco
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        color: Theme.of(context).colorScheme.primary, // IGUAL ao checkout
+        // SEM borderRadius - cantos rectos
       ),
       child: Row(
         children: [
@@ -310,7 +269,11 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
               children: [
                 Text(
                   widget.item.name,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold, 
+                    fontSize: 16,
+                    color: Colors.white, // Texto branco
+                  ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                 ),
@@ -318,14 +281,14 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                   'Ref: ${widget.item.product.reference}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer.withValues(alpha: 0.7),
+                    color: Colors.white.withValues(alpha: 0.7), // Texto branco semi-transparente
                   ),
                 ),
               ],
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -387,71 +350,71 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              // Botão - com cor igual ao método de pagamento selecionado (primary)
               _CircleButton(
                 icon: Icons.remove,
                 onPressed: () => _updateQuantity(-1),
                 size: 56,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
               ),
               const SizedBox(width: 16),
-              // Input + Label da unidade (fora da caixa)
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SizedBox(
-                    width: 120,
-                    child: TextField(
-                      controller: _qtyController,
-                      focusNode: _qtyFocusNode,
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                      decoration: InputDecoration(
-                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                        contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                      ),
-                      inputFormatters: [
-                        FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
-                      ],
-                      onChanged: (value) {
-                        final qty = double.tryParse(value);
-                        if (qty != null && qty > 0) {
-                          setState(() => _currentQty = qty);
-                        }
-                      },
-                    ),
+              // Input SEM label de unidade (removido Kg, Un, etc.)
+              SizedBox(
+                width: 140,
+                child: TextField(
+                  controller: _qtyController,
+                  focusNode: _qtyFocusNode,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  decoration: InputDecoration(
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    _getUnitAbbreviation(widget.item.measureUnit),
-                    style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-                  ),
-                ],
+                  inputFormatters: [
+                    FilteringTextInputFormatter.allow(RegExp(r'^\d*\.?\d*')),
+                  ],
+                  onChanged: (value) {
+                    final qty = double.tryParse(value);
+                    if (qty != null && qty > 0) {
+                      setState(() => _currentQty = qty);
+                    }
+                  },
+                ),
               ),
               const SizedBox(width: 16),
+              // Botão + com cor igual ao método de pagamento selecionado (primary)
               _CircleButton(
                 icon: Icons.add,
                 onPressed: () => _updateQuantity(1),
                 size: 56,
+                backgroundColor: Theme.of(context).colorScheme.primary,
+                foregroundColor: Colors.white,
               ),
             ],
           ),
           const SizedBox(height: 16),
           
           // Botão de leitura da balança (só para produtos pesáveis)
+          // Cor igual aos botões de valor rápido (secondaryContainer com texto verde)
           if (isWeighable) ...[
             ElevatedButton.icon(
               onPressed: _isReadingScale ? null : _readFromScale,
               icon: _isReadingScale
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 18,
                       height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                      ),
                     )
                   : const Icon(Icons.scale, size: 20),
               label: Text(_isReadingScale ? 'A ler...' : 'Ler da Balança'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.teal,
-                foregroundColor: Colors.white,
+                backgroundColor: Theme.of(context).colorScheme.secondaryContainer, // Lima/verde claro
+                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer, // Texto verde
                 padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),
@@ -529,7 +492,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             ],
           ),
           const SizedBox(height: 16),
-          // Botões rápidos + botão limpar na mesma linha
+          // Botões rápidos - MESMA COR dos botões de valor entregue (secondaryContainer)
           Wrap(
             alignment: WrapAlignment.center,
             spacing: 6,
@@ -545,8 +508,12 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                     });
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isSelected ? Colors.orange.shade700 : Colors.orange,
-                    foregroundColor: Colors.white,
+                    backgroundColor: isSelected 
+                        ? Theme.of(context).colorScheme.primary // Selecionado = primary
+                        : Theme.of(context).colorScheme.secondaryContainer, // Normal = lima/verde
+                    foregroundColor: isSelected 
+                        ? Colors.white 
+                        : Theme.of(context).colorScheme.onSecondaryContainer,
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     minimumSize: const Size(50, 40),
                     side: isSelected ? const BorderSide(color: Colors.white, width: 2) : null,
@@ -578,7 +545,11 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
           if (_currentDiscount > 0)
             Text(
               'Desconto: -${(_currentQty * _currentPriceWithTax * _currentDiscount / 100).toStringAsFixed(2)} €',
-              style: const TextStyle(fontSize: 16, color: Colors.orange, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                fontSize: 16, 
+                color: Theme.of(context).colorScheme.primary, 
+                fontWeight: FontWeight.w500,
+              ),
             ),
         ],
       ),
@@ -656,11 +627,15 @@ class _CircleButton extends StatelessWidget {
     required this.icon,
     required this.onPressed,
     this.size = 48,
+    required this.backgroundColor,
+    required this.foregroundColor,
   });
 
   final IconData icon;
   final VoidCallback onPressed;
   final double size;
+  final Color backgroundColor;
+  final Color foregroundColor;
 
   @override
   Widget build(BuildContext context) {
@@ -672,8 +647,8 @@ class _CircleButton extends StatelessWidget {
         style: ElevatedButton.styleFrom(
           shape: const CircleBorder(),
           padding: EdgeInsets.zero,
-          backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-          foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
+          backgroundColor: backgroundColor,
+          foregroundColor: foregroundColor,
         ),
         child: Icon(icon, size: size * 0.5),
       ),

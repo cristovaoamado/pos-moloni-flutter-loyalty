@@ -82,7 +82,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       price: favorite.price,
       image: favorite.image,
       categoryId: favorite.categoryId,
-      taxes: [], // Não temos os detalhes das taxes no favorito
+      taxes: const [], // Não temos os detalhes das taxes no favorito
     );
     widget.onProductSelected(product);
   }
@@ -114,7 +114,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha:0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -144,7 +144,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
           ),
           focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
-            borderSide: const BorderSide(color: AppColors.primaryBrown, width: 2),
+            borderSide: const BorderSide(color: AppColors.primary, width: 2),
           ),
           filled: true,
           fillColor: Colors.grey.shade50,
@@ -294,7 +294,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                   Text(
                     favorite.formattedPriceWithTax,
                     style: const TextStyle(
-                      color: AppColors.primaryBrown,
+                      color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),
@@ -303,7 +303,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
               ),
             ),
             // Badge de favorito
-            Positioned(
+            const Positioned(
               top: 4,
               right: 4,
               child: Icon(
@@ -402,14 +402,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.primaryBrown.withOpacity(0.1),
+        color: AppColors.primary.withValues(alpha: 0.1),
         border: Border(
-          bottom: BorderSide(color: AppColors.primaryBrown.withOpacity(0.2)),
+          bottom: BorderSide(color: AppColors.primary.withValues(alpha:0.2)),
         ),
       ),
       child: Row(
         children: [
-          const Icon(Icons.search, size: 18, color: AppColors.primaryBrown),
+          const Icon(Icons.search, size: 18, color: AppColors.primary),
           const SizedBox(width: 8),
           Text(
             '${state.products.length} resultados',
@@ -489,7 +489,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                   Text(
                     product.formattedPriceWithTax,
                     style: const TextStyle(
-                      color: AppColors.primaryBrown,
+                      color: AppColors.primary,
                       fontWeight: FontWeight.bold,
                       fontSize: 13,
                     ),

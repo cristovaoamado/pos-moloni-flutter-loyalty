@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:dio/dio.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -129,6 +131,13 @@ class AuthNotifier extends StateNotifier<AuthState> {
   static const _keyUsername = 'moloni_username';
   static const _keyPassword = 'moloni_password';
 
+  /// Timer para renovação periódica de tokens
+  Timer? _tokenRefreshTimer;
+  
+  /// Intervalo de renovação de tokens (45 minutos)
+  /// Os tokens Moloni expiram em 1 hora, renovamos antes
+  static const _tokenRefreshInterval = Duration(minutes: 45);
+
   /// Inicializa e tenta auto-login
   Future<void> initialize() async {
     AppLogger.i('🔐 Inicializando autenticação...');
@@ -174,6 +183,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
               isAuthenticated: true,
               requiresLogin: false,
             );
+            _startTokenRefreshTimer();
           }
         },
       );
@@ -186,6 +196,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     
     if (refreshSuccess) {
       AppLogger.i('✅ Auto-login bem-sucedido (refresh token)');
+      _startTokenRefreshTimer();
       return;
     }
 
@@ -207,6 +218,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
       
       if (success) {
         AppLogger.i('✅ Auto-login bem-sucedido (credenciais guardadas)');
+        _startTokenRefreshTimer();
         return;
       }
     }
@@ -220,6 +232,64 @@ class AuthNotifier extends StateNotifier<AuthState> {
         requiresLogin: true,
       );
     }
+  }
+
+  /// Inicia o timer de renovação periódica de tokens
+  void _startTokenRefreshTimer() {
+    _stopTokenRefreshTimer();
+    
+    AppLogger.i('⏰ Iniciando timer de renovação de tokens (${_tokenRefreshInterval.inMinutes} min)');
+    
+    _tokenRefreshTimer = Timer.periodic(_tokenRefreshInterval, (_) async {
+      if (state.isAuthenticated && mounted) {
+        AppLogger.d('⏰ Timer: Renovando token preventivamente...');
+        await _tryRefreshTokenOrRelogin();
+      }
+    });
+  }
+
+  /// Para o timer de renovação
+  void _stopTokenRefreshTimer() {
+    _tokenRefreshTimer?.cancel();
+    _tokenRefreshTimer = null;
+  }
+
+  /// Tenta renovar token, se falhar tenta re-login
+  Future<bool> _tryRefreshTokenOrRelogin() async {
+    // 1. Tentar refresh token
+    final refreshSuccess = await _tryRefreshToken();
+    if (refreshSuccess) {
+      AppLogger.i('✅ Token renovado preventivamente');
+      return true;
+    }
+
+    // 2. Refresh falhou - tentar re-login com credenciais guardadas
+    AppLogger.d('🔄 Refresh falhou, tentando re-login...');
+    
+    final username = await storage.read(key: _keyUsername);
+    final password = await storage.read(key: _keyPassword);
+
+    if (username != null && username.isNotEmpty && 
+        password != null && password.isNotEmpty) {
+      
+      final result = await loginUseCase(
+        username: username,
+        password: password,
+      );
+      
+      return result.fold(
+        (failure) {
+          AppLogger.w('❌ Re-login preventivo falhou: ${failure.message}');
+          return false;
+        },
+        (tokens) {
+          AppLogger.i('✅ Re-login preventivo bem-sucedido');
+          return true;
+        },
+      );
+    }
+
+    return false;
   }
 
   /// Tenta renovar o token usando refresh_token
@@ -278,11 +348,17 @@ class AuthNotifier extends StateNotifier<AuthState> {
     AppLogger.i('🔐 Tentando login...');
     state = state.copyWith(isLoading: true, error: null, requiresLogin: false);
     
-    return _doLogin(
+    final success = await _doLogin(
       username: username, 
       password: password, 
       saveCredentials: saveCredentials,
     );
+    
+    if (success) {
+      _startTokenRefreshTimer();
+    }
+    
+    return success;
   }
 
   /// Executa o login (interno)
@@ -345,6 +421,8 @@ class AuthNotifier extends StateNotifier<AuthState> {
   Future<void> logout({bool clearCredentials = false}) async {
     AppLogger.i('🚪 Fazendo logout...');
 
+    _stopTokenRefreshTimer();
+    
     state = state.copyWith(isLoading: true);
 
     if (clearCredentials) {
@@ -392,6 +470,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
     if (refreshSuccess) {
       if (mounted) {
         state = state.copyWith(isRecovering: false);
+        _startTokenRefreshTimer();
       }
       return true;
     }
@@ -432,6 +511,7 @@ class AuthNotifier extends StateNotifier<AuthState> {
                 isAuthenticated: true,
                 requiresLogin: false,
               );
+              _startTokenRefreshTimer();
             }
           },
         );
@@ -487,6 +567,12 @@ class AuthNotifier extends StateNotifier<AuthState> {
     final password = await storage.read(key: _keyPassword);
     return username != null && username.isNotEmpty && 
            password != null && password.isNotEmpty;
+  }
+
+  @override
+  void dispose() {
+    _stopTokenRefreshTimer();
+    super.dispose();
   }
 }
 

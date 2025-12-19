@@ -18,7 +18,7 @@ class FavoritesScreen extends ConsumerStatefulWidget {
 class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
-  
+
   bool _isSearching = false;
   String _searchQuery = '';
 
@@ -60,7 +60,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
 
   Future<void> _syncFavorites() async {
     await ref.read(localFavoritesProvider.notifier).syncFavorites();
-    
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -72,13 +72,14 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   }
 
   Future<void> _toggleFavorite(Product product) async {
-    final wasAdded = await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
-    
+    final wasAdded =
+        await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            wasAdded 
+            wasAdded
                 ? '${product.name} adicionado aos favoritos'
                 : '${product.name} removido dos favoritos',
           ),
@@ -111,7 +112,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.2),
+                color: Colors.white.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -144,11 +145,11 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         children: [
           // Barra de pesquisa
           _buildSearchBar(),
-          
+
           // Info da última sincronização
           if (favoritesState.lastSync != null && !_isSearching)
             _buildLastSyncInfo(favoritesState.lastSync!),
-          
+
           // Conteúdo principal
           Expanded(
             child: _isSearching
@@ -167,7 +168,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
+            color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -200,7 +201,8 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           ),
           filled: true,
           fillColor: Colors.grey.shade50,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
       ),
     );
@@ -209,7 +211,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   Widget _buildLastSyncInfo(DateTime lastSync) {
     final now = DateTime.now();
     final diff = now.difference(lastSync);
-    
+
     String timeAgo;
     if (diff.inMinutes < 1) {
       timeAgo = 'agora mesmo';
@@ -364,7 +366,9 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           ElevatedButton(
             onPressed: () {
               Navigator.pop(context);
-              ref.read(localFavoritesProvider.notifier).removeFavorite(favorite.productId);
+              ref
+                  .read(localFavoritesProvider.notifier)
+                  .removeFavorite(favorite.productId);
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.red,
@@ -377,7 +381,8 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     );
   }
 
-  Widget _buildSearchResults(ProductState productState, LocalFavoritesState favoritesState) {
+  Widget _buildSearchResults(
+      ProductState productState, LocalFavoritesState favoritesState,) {
     if (productState.isLoading) {
       return const Center(
         child: CircularProgressIndicator(),
@@ -522,7 +527,8 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
               child: Container(
                 padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: isFavorite ? Colors.amber.shade100 : Colors.grey.shade200,
+                  color:
+                      isFavorite ? Colors.amber.shade100 : Colors.grey.shade200,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(

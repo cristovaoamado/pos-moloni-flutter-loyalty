@@ -82,7 +82,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       price: favorite.price,
       image: favorite.image,
       categoryId: favorite.categoryId,
-      taxes: [], // Não temos os detalhes das taxes
+      taxes: const [], // Não temos os detalhes das taxes
     );
   }
 
@@ -98,8 +98,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     // Determinar o que mostrar:
     // 1. Se está a pesquisar ou tem resultados de pesquisa -> mostrar pesquisa
     // 2. Se não está a pesquisar -> mostrar favoritos locais
-    final bool showSearchResults = productState.isLoading || 
-        productState.products.isNotEmpty || 
+    final bool showSearchResults = productState.isLoading ||
+        productState.products.isNotEmpty ||
         productState.hasScannedProduct ||
         _searchController.text.length >= 3;
 
@@ -114,7 +114,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             decoration: InputDecoration(
               labelText: 'Pesquisa de artigos',
               prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border:
+                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
@@ -138,7 +139,9 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
         ),
 
         // Barra de paginação (se houver resultados na grid de pesquisa)
-        if (showSearchResults && productState.products.isNotEmpty && !productState.hasScannedProduct)
+        if (showSearchResults &&
+            productState.products.isNotEmpty &&
+            !productState.hasScannedProduct)
           _buildPaginationBar(productState),
       ],
     );
@@ -161,7 +164,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       children: [
         // Cabeçalho dos favoritos
         _buildFavoritesHeader(state),
-        
+
         // Grid de favoritos
         Expanded(
           child: _buildFavoritesGrid(state.favorites),
@@ -219,9 +222,10 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
           // Botão refresh
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
-            onPressed: state.isSyncing 
-                ? null 
-                : () => ref.read(localFavoritesProvider.notifier).syncFavorites(),
+            onPressed: state.isSyncing
+                ? null
+                : () =>
+                    ref.read(localFavoritesProvider.notifier).syncFavorites(),
             tooltip: 'Actualizar preços',
           ),
         ],
@@ -285,23 +289,25 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   // CONTEÚDO DA PESQUISA
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildSearchContent(ProductState productState, LocalFavoritesState favoritesState) {
+  Widget _buildSearchContent(
+      ProductState productState, LocalFavoritesState favoritesState,) {
     if (productState.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
-    
+
     if (productState.error != null) {
       return _buildErrorState(productState.error!);
     }
-    
+
     if (productState.hasScannedProduct) {
-      return _buildScannedProductView(productState.scannedProduct!, favoritesState);
+      return _buildScannedProductView(
+          productState.scannedProduct!, favoritesState,);
     }
-    
+
     if (productState.products.isEmpty) {
       return _buildEmptySearchState();
     }
-    
+
     return Column(
       children: [
         // Header com resultados e botão voltar
@@ -318,14 +324,18 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+        color: Theme.of(context)
+            .colorScheme
+            .primaryContainer
+            .withValues(alpha: 0.3),
         border: Border(
           bottom: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
       child: Row(
         children: [
-          Icon(Icons.search, size: 18, color: Theme.of(context).colorScheme.primary),
+          Icon(Icons.search,
+              size: 18, color: Theme.of(context).colorScheme.primary,),
           const SizedBox(width: 8),
           Text(
             '${state.products.length} resultados',
@@ -351,7 +361,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     );
   }
 
-  Widget _buildProductGrid(List<Product> products, LocalFavoritesState favoritesState) {
+  Widget _buildProductGrid(
+      List<Product> products, LocalFavoritesState favoritesState,) {
     return GridView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -375,13 +386,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   }
 
   void _toggleFavorite(Product product) async {
-    final wasAdded = await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
-    
+    final wasAdded =
+        await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
+
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            wasAdded 
+            wasAdded
                 ? '⭐ ${product.name} adicionado aos favoritos'
                 : '${product.name} removido dos favoritos',
           ),
@@ -396,9 +408,10 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   // ESTADOS ESPECIAIS
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildScannedProductView(Product product, LocalFavoritesState favoritesState) {
+  Widget _buildScannedProductView(
+      Product product, LocalFavoritesState favoritesState,) {
     final isFavorite = favoritesState.isFavorite(product.id);
-    
+
     return Column(
       children: [
         // Header
@@ -412,7 +425,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
           ),
           child: Row(
             children: [
-              Icon(Icons.qr_code_scanner, color: Colors.green.shade700, size: 20),
+              Icon(Icons.qr_code_scanner,
+                  color: Colors.green.shade700, size: 20,),
               const SizedBox(width: 8),
               Text(
                 'Produto encontrado',
@@ -541,9 +555,12 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.add, size: 18),
-              label: Text(productState.isLoadingMore ? 'A carregar...' : 'Carregar mais'),
+              label: Text(productState.isLoadingMore
+                  ? 'A carregar...'
+                  : 'Carregar mais',),
               style: ElevatedButton.styleFrom(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
               ),
             )
           else
@@ -585,7 +602,8 @@ class _FavoriteCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart = ref.watch(cartProvider.notifier).containsProduct(favorite.productId);
+    final isInCart =
+        ref.watch(cartProvider.notifier).containsProduct(favorite.productId);
 
     return Card(
       elevation: 2,
@@ -600,7 +618,8 @@ class _FavoriteCard extends ConsumerWidget {
                 ? Image.network(
                     favorite.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
+                    errorBuilder: (_, __, ___) =>
+                        _buildPlaceholderImage(context),
                   )
                 : _buildPlaceholderImage(context),
 
@@ -617,7 +636,7 @@ class _FavoriteCard extends ConsumerWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.7),
+                      Colors.black.withValues(alpha: 0.7),
                     ],
                   ),
                 ),
@@ -660,7 +679,7 @@ class _FavoriteCard extends ConsumerWidget {
                   shape: BoxShape.circle,
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
+                      color: Colors.black.withValues(alpha: 0.3),
                       blurRadius: 4,
                       offset: const Offset(0, 2),
                     ),
@@ -686,7 +705,7 @@ class _FavoriteCard extends ConsumerWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -736,7 +755,8 @@ class _ProductCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart = ref.watch(cartProvider.notifier).containsProduct(product.id);
+    final isInCart =
+        ref.watch(cartProvider.notifier).containsProduct(product.id);
 
     return Card(
       elevation: 2,
@@ -752,7 +772,8 @@ class _ProductCard extends ConsumerWidget {
                 ? Image.network(
                     product.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
+                    errorBuilder: (_, __, ___) =>
+                        _buildPlaceholderImage(context),
                   )
                 : _buildPlaceholderImage(context),
 
@@ -769,7 +790,7 @@ class _ProductCard extends ConsumerWidget {
                     end: Alignment.bottomCenter,
                     colors: [
                       Colors.transparent,
-                      Colors.black.withOpacity(0.7),
+                      Colors.black.withValues(alpha: 0.7),
                     ],
                   ),
                 ),
@@ -800,14 +821,16 @@ class _ProductCard extends ConsumerWidget {
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2,),
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
+                            color: Colors.white.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '${product.totalTaxRate.toStringAsFixed(0)}%',
-                            style: const TextStyle(fontSize: 10, color: Colors.white),
+                            style: const TextStyle(
+                                fontSize: 10, color: Colors.white,),
                           ),
                         ),
                       ],
@@ -826,11 +849,13 @@ class _ProductCard extends ConsumerWidget {
                 child: Container(
                   padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
-                    color: isFavorite ? Colors.amber : Colors.black.withOpacity(0.4),
+                    color: isFavorite
+                        ? Colors.amber
+                        : Colors.black.withValues(alpha: 0.4),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),
@@ -857,7 +882,7 @@ class _ProductCard extends ConsumerWidget {
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
+                        color: Colors.black.withValues(alpha: 0.3),
                         blurRadius: 4,
                         offset: const Offset(0, 2),
                       ),

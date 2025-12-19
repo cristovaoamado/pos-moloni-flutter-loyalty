@@ -83,6 +83,9 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
     final customerState = ref.watch(customerProvider);
 
     return Dialog(
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.zero, // SEM cantos arredondados
+      ),
       child: Container(
         width: 550,
         height: 500,
@@ -105,28 +108,33 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    // IGUAL ao checkout e item_options: primary com texto branco, sem borderRadius
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primaryContainer,
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        color: Theme.of(context).colorScheme.primary, // IGUAL aos outros dialogs
+        // SEM borderRadius - cantos rectos
       ),
       child: Row(
         children: [
           if (_showCreateForm)
             IconButton(
-              icon: const Icon(Icons.arrow_back),
+              icon: const Icon(Icons.arrow_back, color: Colors.white),
               onPressed: () => setState(() => _showCreateForm = false),
               tooltip: 'Voltar à pesquisa',
             ),
           Expanded(
             child: Text(
               _showCreateForm ? 'Novo Cliente' : 'Pesquisa de Clientes',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                fontSize: 18, 
+                fontWeight: FontWeight.bold,
+                color: Colors.white, // Texto branco
+              ),
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.close),
+            icon: const Icon(Icons.close, color: Colors.white),
             onPressed: () => Navigator.pop(context),
           ),
         ],
@@ -181,6 +189,10 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
                     onPressed: () => setState(() => _showCreateForm = true),
                     icon: const Icon(Icons.add),
                     label: const Text('Novo'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.primary,
+                      foregroundColor: Colors.white,
+                    ),
                   ),
                 ],
               ),
@@ -230,21 +242,12 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
         ),
       );
     }
-
-    if (_searchController.text.length < 3) {
-      return Center(
-        child: Text(
-          'Digite pelo menos 3 caracteres',
-          style: TextStyle(color: Theme.of(context).colorScheme.outline),
-        ),
-      );
-    }
-
+    
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.person_off, size: 48, color: Theme.of(context).colorScheme.outline),
+          Icon(Icons.person_search, size: 48, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 8),
           const Text('Nenhum cliente encontrado'),
           const SizedBox(height: 16),
@@ -252,6 +255,10 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
             onPressed: () => setState(() => _showCreateForm = true),
             icon: const Icon(Icons.add),
             label: const Text('Criar novo cliente'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.primary,
+              foregroundColor: Colors.white,
+            ),
           ),
         ],
       ),
@@ -279,11 +286,11 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
         final customer = customers[index];
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
             child: Text(
               customer.name.isNotEmpty ? customer.name[0].toUpperCase() : '?',
               style: TextStyle(
-                color: Theme.of(context).colorScheme.onPrimaryContainer,
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.bold,
               ),
             ),
@@ -468,13 +475,13 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
                   ? const SizedBox(
                       width: 20,
                       height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                     )
                   : const Icon(Icons.save),
               label: Text(state.isCreating ? 'A criar...' : 'Criar Cliente'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Theme.of(context).colorScheme.primary,
-                foregroundColor: Theme.of(context).colorScheme.onPrimary,
+                foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),

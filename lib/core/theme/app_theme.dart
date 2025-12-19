@@ -167,10 +167,11 @@ class AppTheme {
       ),
 
       // Cards
-      cardTheme: CardThemeData(
+      // Cards - SEM cantos arredondados
+      cardTheme: const CardThemeData(
         elevation: 2,
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadius),
+          borderRadius: BorderRadius.zero,
         ),
       ),
 
@@ -187,12 +188,12 @@ class AppTheme {
         ),
       ),
 
-      // Dialogs
-      dialogTheme: DialogThemeData(
+      // Dialogs - SEM cantos arredondados
+      dialogTheme: const DialogThemeData(
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(borderRadius * 2),
+          borderRadius: BorderRadius.zero,
         ),
-        titleTextStyle: const TextStyle(
+        titleTextStyle: TextStyle(
           fontSize: 20,
           fontWeight: FontWeight.w600,
           color: AppColors.textPrimary,

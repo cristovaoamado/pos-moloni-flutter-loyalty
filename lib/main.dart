@@ -6,7 +6,6 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pos_moloni_app/app.dart';
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
-import 'package:pos_moloni_app/features/favorites/data/datasources/favorites_storage.dart';
 import 'package:pos_moloni_app/features/suspended_sales/data/suspended_sales_storage.dart';
 
 void main() async {
@@ -37,9 +36,6 @@ void main() async {
     // Inicializar storage de vendas suspensas (regista adaptadores)
     await SuspendedSalesStorage.initialize();
     AppLogger.d('Storage de vendas suspensas inicializado');
-
-    await FavoritesStorage.initialize();
-    AppLogger.d('Storage de favoritos inicializado');
 
     // Configurar UI do sistema (status bar)
     SystemChrome.setSystemUIOverlayStyle(

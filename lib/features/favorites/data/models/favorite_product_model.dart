@@ -20,6 +20,29 @@ class FavoriteProductModel extends HiveObject {
   })  : addedAt = addedAt ?? DateTime.now(),
         lastUpdated = lastUpdated ?? DateTime.now();
 
+  /// Cria a partir de um Product
+  factory FavoriteProductModel.fromProduct({
+    required int productId,
+    required String name,
+    required String reference,
+    String? ean,
+    required double price,
+    String? image,
+    required int categoryId,
+    double taxRate = 23.0,
+  }) {
+    return FavoriteProductModel(
+      productId: productId,
+      name: name,
+      reference: reference,
+      ean: ean,
+      price: price,
+      image: image,
+      categoryId: categoryId,
+      taxRate: taxRate,
+    );
+  }
+
   @HiveField(0)
   final int productId;
 
@@ -61,29 +84,6 @@ class FavoriteProductModel extends HiveObject {
 
   /// Preço formatado com IVA
   String get formattedPriceWithTax => '${priceWithTax.toStringAsFixed(2)} €';
-
-  /// Cria a partir de um Product
-  factory FavoriteProductModel.fromProduct({
-    required int productId,
-    required String name,
-    required String reference,
-    String? ean,
-    required double price,
-    String? image,
-    required int categoryId,
-    double taxRate = 23.0,
-  }) {
-    return FavoriteProductModel(
-      productId: productId,
-      name: name,
-      reference: reference,
-      ean: ean,
-      price: price,
-      image: image,
-      categoryId: categoryId,
-      taxRate: taxRate,
-    );
-  }
 
   /// Actualiza os dados do produto (mantém addedAt original)
   FavoriteProductModel copyWithUpdatedData({

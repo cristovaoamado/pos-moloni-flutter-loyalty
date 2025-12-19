@@ -10,23 +10,63 @@ import 'package:pos_moloni_app/features/company/presentation/providers/company_p
 import 'package:pos_moloni_app/features/company/presentation/screens/company_selection_screen.dart';
 import 'package:pos_moloni_app/features/pos/presentation/screens/pos_screen.dart';
 
-class MyApp extends ConsumerWidget {
+class MyApp extends ConsumerStatefulWidget {
   const MyApp({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    AppLogger.i('🎨 Building MyApp');
+  ConsumerState<MyApp> createState() => _MyAppState();
+}
 
-    // Observar estado de autenticação
+class _MyAppState extends ConsumerState<MyApp> {
+  /// Flag que indica se a inicialização completa terminou
+  bool _appReady = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Inicializar aplicação após o primeiro frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeApp();
+    });
+  }
+
+  Future<void> _initializeApp() async {
+    AppLogger.i('🚀 Iniciando aplicação...');
+    
+    // 1. Tentar auto-login
+    await ref.read(authProvider.notifier).initialize();
+    
+    // 2. Se autenticado, carregar empresa guardada
+    final authState = ref.read(authProvider);
+    if (authState.isAuthenticated) {
+      AppLogger.i('🏢 Carregando empresa guardada...');
+      await ref.read(companyProvider.notifier).loadSelectedCompany();
+    }
+    
+    // 3. Marcar app como pronta
+    if (mounted) {
+      setState(() {
+        _appReady = true;
+      });
+      AppLogger.i('✅ Aplicação pronta');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    AppLogger.i('🎨 Building MyApp (ready: $_appReady)');
+
+    // Observar estados
     final authState = ref.watch(authProvider);
+    final companyState = ref.watch(companyProvider);
 
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: AppConstants.appName,
       theme: AppTheme.lightTheme,
 
-      // Navegação baseada em estado de autenticação
-      home: _buildHome(authState),
+      // Navegação baseada em estado
+      home: _buildHome(authState, companyState),
 
       // Builder para capturar contexto global (útil para SnackBars, Dialogs)
       builder: (context, child) {
@@ -41,20 +81,32 @@ class MyApp extends ConsumerWidget {
     );
   }
 
-  Widget _buildHome(AuthState authState) {
-    // Se estiver carregando (verificando auto-login)
-    if (authState.isLoading && !authState.isAuthenticated) {
+  Widget _buildHome(AuthState authState, CompanyState companyState) {
+    // ═══════════════════════════════════════════════════════════════════
+    // SPLASH: Mostrar enquanto inicializa (auto-login + carregar empresa)
+    // ═══════════════════════════════════════════════════════════════════
+    if (!_appReady) {
       return const _SplashScreen();
     }
 
-    // Se autenticado
-    if (authState.isAuthenticated) {
-      // Verificar se tem empresa selecionada
-      return const _AuthenticatedFlow();
+    // ═══════════════════════════════════════════════════════════════════
+    // LOGIN: Se não autenticado
+    // ═══════════════════════════════════════════════════════════════════
+    if (!authState.isAuthenticated) {
+      return const LoginScreen();
     }
 
-    // Se não autenticado, mostrar tela de login
-    return const LoginScreen();
+    // ═══════════════════════════════════════════════════════════════════
+    // POS: Se autenticado E tem empresa selecionada
+    // ═══════════════════════════════════════════════════════════════════
+    if (companyState.selectedCompany != null) {
+      return const PosScreen();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // SELEÇÃO DE EMPRESA: Se autenticado mas sem empresa
+    // ═══════════════════════════════════════════════════════════════════
+    return const CompanySelectionScreen();
   }
 }
 
@@ -116,25 +168,5 @@ class _SplashScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-/// Fluxo quando autenticado (verifica empresa)
-class _AuthenticatedFlow extends ConsumerWidget {
-  const _AuthenticatedFlow();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    // Observar o estado completo para reagir a mudanças
-    final companyState = ref.watch(companyProvider);
-    final hasSelectedCompany = companyState.selectedCompany != null;
-
-    // Se já tem empresa selecionada, ir para POS
-    if (hasSelectedCompany) {
-      return const PosScreen();
-    }
-
-    // Se não tem empresa, mostrar seleção
-    return const CompanySelectionScreen();
   }
 }
