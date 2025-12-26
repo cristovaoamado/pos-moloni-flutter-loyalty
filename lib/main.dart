@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import 'package:pos_moloni_app/app.dart';
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
+import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
 import 'package:pos_moloni_app/features/suspended_sales/data/suspended_sales_storage.dart';
 
 void main() async {
@@ -29,11 +30,17 @@ void main() async {
     await Hive.initFlutter();
     AppLogger.d('Hive inicializado');
 
-//     // TEMPORÁRIO - Limpar dados antigos incompatíveis (remover depois)
-// await Hive.deleteBoxFromDisk('suspended_sales');
-// AppLogger.d('Dados antigos de vendas suspensas limpos');
+    // ══════════════════════════════════════════════════════════════════════════
+    // REGISTAR ADAPTADORES HIVE (ANTES de abrir qualquer box)
+    // ══════════════════════════════════════════════════════════════════════════
+    
+    // Registar adapter de favoritos (typeId: 10)
+    if (!Hive.isAdapterRegistered(10)) {
+      Hive.registerAdapter(FavoriteProductModelAdapter());
+      AppLogger.d('⭐ Adapter FavoriteProductModel registado');
+    }
 
-    // Inicializar storage de vendas suspensas (regista adaptadores)
+    // Inicializar storage de vendas suspensas (regista os seus adaptadores)
     await SuspendedSalesStorage.initialize();
     AppLogger.d('Storage de vendas suspensas inicializado');
 
