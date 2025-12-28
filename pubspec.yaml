@@ -15,7 +15,7 @@ dependencies:
   
   # Network
   dio: ^5.4.0
-  retrofit: ^4.6.0
+  retrofit: ^4.4.1
   connectivity_plus: ^5.0.2
   
   # Storage
@@ -61,10 +61,10 @@ dev_dependencies:
   flutter_lints: ^3.0.0
   
   # Code generation
-  build_runner: ^2.4.7
+  build_runner: ^2.4.13
   freezed: ^2.4.6
   json_serializable: ^6.7.1
-  retrofit_generator: ^9.1.2
+  retrofit_generator: ^8.1.0  # Compatível com hive_generator
   hive_generator: ^2.0.1
   
   # Tests
