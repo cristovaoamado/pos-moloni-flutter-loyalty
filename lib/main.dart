@@ -1,13 +1,54 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'package:pos_moloni_app/app.dart';
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
 import 'package:pos_moloni_app/features/suspended_sales/data/suspended_sales_storage.dart';
+
+/// Inicializa o Hive no diretório correto para cada plataforma
+/// - Windows/Linux/macOS: AppData/Local (ou equivalente)
+/// - Mobile: Diretório privado da app
+/// - Web: IndexedDB (gerido automaticamente)
+Future<void> _initHive() async {
+  if (kIsWeb) {
+    // Web: usa IndexedDB automaticamente
+    await Hive.initFlutter();
+    AppLogger.d('📦 Hive inicializado (Web/IndexedDB)');
+    return;
+  }
+
+  // Determinar diretório correto por plataforma
+  final Directory appDir;
+  
+  if (Platform.isWindows || Platform.isLinux || Platform.isMacOS) {
+    // Desktop: usar AppData/Local (Windows) ou ~/.local/share (Linux) ou ~/Library/Application Support (macOS)
+    appDir = await getApplicationSupportDirectory();
+  } else {
+    // Mobile (Android/iOS): usar diretório privado da app
+    appDir = await getApplicationDocumentsDirectory();
+  }
+
+  // Criar subpasta para dados do Hive
+  final hivePath = '${appDir.path}${Platform.pathSeparator}hive_data';
+  final hiveDir = Directory(hivePath);
+  
+  // Criar diretório se não existir
+  if (!await hiveDir.exists()) {
+    await hiveDir.create(recursive: true);
+  }
+
+  // Inicializar Hive no caminho correto
+  Hive.init(hivePath);
+  AppLogger.i('📦 Hive inicializado em: $hivePath');
+}
 
 void main() async {
   // Garantir inicialização do Flutter
@@ -26,13 +67,12 @@ void main() async {
       AppLogger.d('Orientação: Horizontal (forçado)');
     }
 
-    // Inicializar Hive (database local)
-    await Hive.initFlutter();
-    AppLogger.d('Hive inicializado');
+    // Inicializar Hive no diretório correto
+    await _initHive();
 
-    // ══════════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
     // REGISTAR ADAPTADORES HIVE (ANTES de abrir qualquer box)
-    // ══════════════════════════════════════════════════════════════════════════
+    // ═══════════════════════════════════════════════════════════════════════
     
     // Registar adapter de favoritos (typeId: 10)
     if (!Hive.isAdapterRegistered(10)) {
