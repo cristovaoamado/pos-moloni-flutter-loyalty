@@ -45,7 +45,7 @@
 //       ),
 
 //       // Botões Elevated (principais)
-//       elevatedButtonTheme: ElevatedButtonThemeData(
+//       elevatedButtonTheme: ElevatedButtonTheme(
 //         style: ElevatedButton.styleFrom(
 //           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
 //           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -62,7 +62,7 @@
 //       ),
 
 //       // Botões Outlined (secundários)
-//       outlinedButtonTheme: OutlinedButtonThemeData(
+//       outlinedButtonTheme: OutlinedButtonTheme(
 //         style: OutlinedButton.styleFrom(
 //           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
 //           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -79,7 +79,7 @@
 //       ),
 
 //       // Botões Text (terciários)
-//       textButtonTheme: TextButtonThemeData(
+//       textButtonTheme: TextButtonTheme(
 //         style: TextButton.styleFrom(
 //           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
 //           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -157,7 +157,7 @@
 //       // Inputs
 //       inputDecorationTheme: InputDecorationTheme(
 //         filled: true,
-//         fillColor: colorScheme.surfaceContainerHighest.withValues(alpha:0.5),
+//         fillColor: colorScheme.surfaceContainerHighest.withOpacity(0.5),
 //         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
 //         border: OutlineInputBorder(
 //           borderRadius: BorderRadius.circular(borderRadius),
@@ -165,7 +165,7 @@
 //         ),
 //         enabledBorder: OutlineInputBorder(
 //           borderRadius: BorderRadius.circular(borderRadius),
-//           borderSide: BorderSide(color: colorScheme.outline.withValues(alpha:0.5)),
+//           borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
 //         ),
 //         focusedBorder: OutlineInputBorder(
 //           borderRadius: BorderRadius.circular(borderRadius),
@@ -371,7 +371,7 @@
 //         color: isSelected ? _primaryColor : Colors.grey.shade300,
 //         width: isSelected ? 2 : 1,
 //       ),
-//       backgroundColor: isSelected ? _primaryColor.withValues(alpha:0.1) : null,
+//       backgroundColor: isSelected ? _primaryColor.withOpacity(0.1) : null,
 //     );
 //   }
 

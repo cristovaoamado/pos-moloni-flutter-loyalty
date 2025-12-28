@@ -265,7 +265,7 @@ class _FilterChip extends StatelessWidget {
 
     return Material(
       color: isSelected
-          ? effectiveColor.withValues(alpha: 0.15)
+          ? effectiveColor.withOpacity(0.15)
           : Colors.transparent,
       borderRadius: BorderRadius.circular(20),
       child: InkWell(
@@ -281,7 +281,7 @@ class _FilterChip extends StatelessWidget {
                   : Theme.of(context)
                       .colorScheme
                       .outline
-                      .withValues(alpha: 0.3),
+                      .withOpacity(0.3),
               width: isSelected ? 1.5 : 1,
             ),
           ),
@@ -295,7 +295,7 @@ class _FilterChip extends StatelessWidget {
                     ? Theme.of(context)
                         .colorScheme
                         .outline
-                        .withValues(alpha: 0.3)
+                        .withOpacity(0.3)
                     : isSelected
                         ? effectiveColor
                         : Theme.of(context).colorScheme.outline,
@@ -308,7 +308,7 @@ class _FilterChip extends StatelessWidget {
                           ? Theme.of(context)
                               .colorScheme
                               .outline
-                              .withValues(alpha: 0.3)
+                              .withOpacity(0.3)
                           : isSelected
                               ? effectiveColor
                               : Theme.of(context).colorScheme.outline,
@@ -327,7 +327,7 @@ class _FilterChip extends StatelessWidget {
                         : Theme.of(context)
                             .colorScheme
                             .outline
-                            .withValues(alpha: 0.2),
+                            .withOpacity(0.2),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(

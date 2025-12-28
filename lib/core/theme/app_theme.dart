@@ -60,7 +60,7 @@ class AppTheme {
       ),
 
       // ElevatedButton
-      elevatedButtonTheme: ElevatedButtonThemeData(
+      elevatedButtonTheme: ElevatedButtonTheme(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -79,7 +79,7 @@ class AppTheme {
       ),
 
       // OutlinedButton
-      outlinedButtonTheme: OutlinedButtonThemeData(
+      outlinedButtonTheme: OutlinedButtonTheme(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -96,7 +96,7 @@ class AppTheme {
       ),
 
       // TextButton
-      textButtonTheme: TextButtonThemeData(
+      textButtonTheme: TextButtonTheme(
         style: TextButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -152,7 +152,7 @@ class AppTheme {
         ),
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
-          borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
+          borderSide: BorderSide(color: colorScheme.outline.withOpacity(0.5)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(borderRadius),
@@ -168,7 +168,7 @@ class AppTheme {
 
       // Cards
       // Cards - SEM cantos arredondados
-      cardTheme: const CardThemeData(
+      cardTheme: const CardTheme(
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.zero,
@@ -189,7 +189,7 @@ class AppTheme {
       ),
 
       // Dialogs - SEM cantos arredondados
-      dialogTheme: const DialogThemeData(
+      dialogTheme: const DialogTheme(
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.zero,
         ),
@@ -304,7 +304,7 @@ class AppTheme {
         width: isSelected ? 2 : 1,
       ),
       backgroundColor: isSelected
-          ? AppColors.primary.withValues(alpha: 0.1)
+          ? AppColors.primary.withOpacity(0.1)
           : null,
     );
   }

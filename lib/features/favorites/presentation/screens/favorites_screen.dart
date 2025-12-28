@@ -112,7 +112,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
               margin: const EdgeInsets.only(right: 8),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.2),
+                color: Colors.white.withOpacity(0.2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
@@ -168,7 +168,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -419,7 +419,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         // Header com resultados
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          color: AppColors.primary.withValues(alpha: 0.1),
+          color: AppColors.primary.withOpacity(0.1),
           child: Row(
             children: [
               Text(

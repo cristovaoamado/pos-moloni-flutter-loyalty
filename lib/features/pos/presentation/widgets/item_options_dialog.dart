@@ -316,7 +316,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                   'Ref: ${widget.item.product.reference}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.7),
+                    color: Colors.white.withOpacity(0.7),
                   ),
                 ),
               ],
@@ -522,9 +522,9 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: statusColor.withValues(alpha: 0.1),
+        color: statusColor.withOpacity(0.1),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+        border: Border.all(color: statusColor.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -603,7 +603,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                       color: Theme.of(context)
                           .colorScheme
                           .outline
-                          .withValues(alpha: 0.5),
+                          .withOpacity(0.5),
                     ),
                   ),
                   inputFormatters: [

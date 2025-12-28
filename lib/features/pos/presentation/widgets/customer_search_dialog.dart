@@ -286,7 +286,7 @@ class _CustomerSearchDialogState extends ConsumerState<CustomerSearchDialog> {
         final customer = customers[index];
         return ListTile(
           leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.2),
+            backgroundColor: Theme.of(context).colorScheme.primary.withOpacity(0.2),
             child: Text(
               customer.name.isNotEmpty ? customer.name[0].toUpperCase() : '?',
               style: TextStyle(

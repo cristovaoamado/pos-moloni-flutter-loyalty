@@ -904,8 +904,8 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: isScannerActive
-                    ? Colors.green.withValues(alpha: 0.3)
-                    : Colors.red.withValues(alpha: 0.3),
+                    ? Colors.green.withOpacity(0.3)
+                    : Colors.red.withOpacity(0.3),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
                   color: isScannerActive ? Colors.green : Colors.red,
@@ -956,7 +956,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
+                  color: Colors.white.withOpacity(0.2),
                   borderRadius: BorderRadius.circular(20),
                 ),
                 child: Row(

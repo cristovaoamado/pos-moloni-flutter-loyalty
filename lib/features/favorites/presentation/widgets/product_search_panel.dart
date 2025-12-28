@@ -114,7 +114,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha:0.05),
+            color: Colors.black.withOpacity(0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
           ),
@@ -402,9 +402,9 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.1),
+        color: AppColors.primary.withOpacity(0.1),
         border: Border(
-          bottom: BorderSide(color: AppColors.primary.withValues(alpha:0.2)),
+          bottom: BorderSide(color: AppColors.primary.withOpacity(0.2)),
         ),
       ),
       child: Row(

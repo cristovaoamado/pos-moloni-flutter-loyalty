@@ -281,7 +281,7 @@
 //                   'Ref: ${widget.item.product.reference}',
 //                   style: TextStyle(
 //                     fontSize: 12,
-//                     color: Colors.white.withValues(alpha: 0.7), // Texto branco semi-transparente
+//                     color: Colors.white.withOpacity(0.7), // Texto branco semi-transparente
 //                   ),
 //                 ),
 //               ],
@@ -472,7 +472,7 @@
 //                     hintStyle: TextStyle(
 //                       fontSize: 32,
 //                       fontWeight: FontWeight.bold,
-//                       color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+//                       color: Theme.of(context).colorScheme.outline.withOpacity(0.5),
 //                     ),
 //                   ),
 //                   inputFormatters: [

@@ -518,7 +518,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: (color ?? Theme.of(context).colorScheme.primary)
-            .withValues(alpha: 0.1),
+            .withOpacity(0.1),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(

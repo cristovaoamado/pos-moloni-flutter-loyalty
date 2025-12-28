@@ -160,7 +160,7 @@ class ReceiptPanel extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(
                           horizontal: 6, vertical: 2,),
                       decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.2),
+                        color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
@@ -200,7 +200,7 @@ class ReceiptPanel extends ConsumerWidget {
                   color: Theme.of(context)
                       .colorScheme
                       .outline
-                      .withValues(alpha: 0.3),),
+                      .withOpacity(0.3),),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -257,7 +257,7 @@ class ReceiptPanel extends ConsumerWidget {
         color: Theme.of(context).colorScheme.surface,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.1),
+            color: Colors.black.withOpacity(0.1),
             blurRadius: 4,
             offset: const Offset(0, -2),
           ),
@@ -454,7 +454,7 @@ class _CartItemTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
               color:
-                  Theme.of(context).colorScheme.outline.withValues(alpha: 0.2),),
+                  Theme.of(context).colorScheme.outline.withOpacity(0.2),),
         ),
         child: Row(
           children: [
