@@ -88,28 +88,21 @@ Future<int> processFile(File file, bool dryRun) async {
   });
 
   // ============================================
-  // 2. CardThemeData → CardTheme
+  // 2. CardThemeData → CardTheme (Flutter 3.27+ usa CardThemeData)
+  // NOTA: Em Flutter 3.24, CardTheme é o correto
   // ============================================
-  if (newContent.contains('CardThemeData')) {
-    newContent = newContent.replaceAll('CardThemeData', 'CardTheme');
-    changes++;
-  }
+  // NÃO FAZER - CardTheme está correto em 3.24
 
   // ============================================
-  // 3. DialogThemeData → DialogTheme
+  // 3. DialogThemeData → DialogTheme (Flutter 3.27+ usa DialogThemeData)
+  // NOTA: Em Flutter 3.24, DialogTheme é o correto
   // ============================================
-  if (newContent.contains('DialogThemeData')) {
-    newContent = newContent.replaceAll('DialogThemeData', 'DialogTheme');
-    changes++;
-  }
+  // NÃO FAZER - DialogTheme está correto em 3.24
 
   // ============================================
   // 4. AppBarThemeData → AppBarTheme (se existir)
   // ============================================
-  if (newContent.contains('AppBarThemeData')) {
-    newContent = newContent.replaceAll('AppBarThemeData', 'AppBarTheme');
-    changes++;
-  }
+  // NÃO FAZER - AppBarTheme está correto em 3.24
 
   // ============================================
   // 5. IconThemeData (este já existe, não mudar)
@@ -117,34 +110,35 @@ Future<int> processFile(File file, bool dryRun) async {
   // IconThemeData é válido em ambas as versões
 
   // ============================================
-  // 6. TextButtonThemeData → TextButtonTheme (se existir)
+  // 6-8. ButtonTheme - NÃO SUBSTITUIR
+  // Em Flutter 3.24, usa-se:
+  //   - ElevatedButtonThemeData
+  //   - TextButtonThemeData  
+  //   - OutlinedButtonThemeData
   // ============================================
-  if (newContent.contains('TextButtonThemeData(')) {
-    newContent = newContent.replaceAll('TextButtonThemeData(', 'TextButtonTheme(');
+  
+  // CORRIGIR: Se o script anterior removeu "Data", restaurar
+  if (newContent.contains('elevatedButtonTheme: ElevatedButtonTheme(')) {
+    newContent = newContent.replaceAll(
+      'elevatedButtonTheme: ElevatedButtonTheme(',
+      'elevatedButtonTheme: ElevatedButtonThemeData(',
+    );
     changes++;
   }
-
-  // ============================================
-  // 7. ElevatedButtonThemeData → ElevatedButtonTheme (se existir)
-  // ============================================
-  if (newContent.contains('ElevatedButtonThemeData(')) {
-    newContent = newContent.replaceAll('ElevatedButtonThemeData(', 'ElevatedButtonTheme(');
+  
+  if (newContent.contains('outlinedButtonTheme: OutlinedButtonTheme(')) {
+    newContent = newContent.replaceAll(
+      'outlinedButtonTheme: OutlinedButtonTheme(',
+      'outlinedButtonTheme: OutlinedButtonThemeData(',
+    );
     changes++;
   }
-
-  // ============================================
-  // 8. OutlinedButtonThemeData → OutlinedButtonTheme (se existir)
-  // ============================================
-  if (newContent.contains('OutlinedButtonThemeData(')) {
-    newContent = newContent.replaceAll('OutlinedButtonThemeData(', 'OutlinedButtonTheme(');
-    changes++;
-  }
-
-  // ============================================
-  // 9. InputDecorationThemeData → InputDecorationTheme (se existir)
-  // ============================================
-  if (newContent.contains('InputDecorationThemeData')) {
-    newContent = newContent.replaceAll('InputDecorationThemeData', 'InputDecorationTheme');
+  
+  if (newContent.contains('textButtonTheme: TextButtonTheme(')) {
+    newContent = newContent.replaceAll(
+      'textButtonTheme: TextButtonTheme(',
+      'textButtonTheme: TextButtonThemeData(',
+    );
     changes++;
   }
 

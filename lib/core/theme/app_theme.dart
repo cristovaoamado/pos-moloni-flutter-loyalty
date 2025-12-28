@@ -59,8 +59,8 @@ class AppTheme {
         ),
       ),
 
-      // ElevatedButton
-      elevatedButtonTheme: ElevatedButtonTheme(
+      // ElevatedButton - usa ElevatedButtonThemeData em Flutter 3.24
+      elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -78,8 +78,8 @@ class AppTheme {
         ),
       ),
 
-      // OutlinedButton
-      outlinedButtonTheme: OutlinedButtonTheme(
+      // OutlinedButton - usa OutlinedButtonThemeData em Flutter 3.24
+      outlinedButtonTheme: OutlinedButtonThemeData(
         style: OutlinedButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -95,8 +95,8 @@ class AppTheme {
         ),
       ),
 
-      // TextButton
-      textButtonTheme: TextButtonTheme(
+      // TextButton - usa TextButtonThemeData em Flutter 3.24
+      textButtonTheme: TextButtonThemeData(
         style: TextButton.styleFrom(
           minimumSize: const Size(buttonMinWidth, buttonMinHeight),
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
@@ -166,7 +166,6 @@ class AppTheme {
         hintStyle: const TextStyle(fontSize: 16, color: AppColors.textHint),
       ),
 
-      // Cards
       // Cards - SEM cantos arredondados
       cardTheme: const CardTheme(
         elevation: 2,
