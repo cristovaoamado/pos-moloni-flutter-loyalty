@@ -171,11 +171,11 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                   const Icon(Icons.scale, color: Colors.white),
                   const SizedBox(width: 8),
                   Text(
-                      'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}'),
+                      'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}',),
                   if (!reading.isStable) ...[
                     const SizedBox(width: 8),
                     const Text('(instável)',
-                        style: TextStyle(fontStyle: FontStyle.italic)),
+                        style: TextStyle(fontStyle: FontStyle.italic),),
                   ],
                 ],
               ),
@@ -401,10 +401,10 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                       const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 32, fontWeight: FontWeight.bold),
+                      fontSize: 32, fontWeight: FontWeight.bold,),
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   inputFormatters: [
@@ -591,10 +591,10 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                       const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 32, fontWeight: FontWeight.bold),
+                      fontSize: 32, fontWeight: FontWeight.bold,),
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                     hintText: '0',
                     hintStyle: TextStyle(
@@ -645,7 +645,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                         ? Colors.white
                         : Theme.of(context).colorScheme.onSecondaryContainer,
                     padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
+                        horizontal: 12, vertical: 10,),
                     minimumSize: const Size(50, 40),
                     side: isSelected
                         ? const BorderSide(color: Colors.white, width: 2)
@@ -654,7 +654,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                   child: Text(
                     '$d%',
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13),
+                        fontWeight: FontWeight.bold, fontSize: 13,),
                   ),
                 );
               }),
@@ -715,10 +715,10 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog>
                       const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
                   style: const TextStyle(
-                      fontSize: 32, fontWeight: FontWeight.bold),
+                      fontSize: 32, fontWeight: FontWeight.bold,),
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(12)),
+                        borderRadius: BorderRadius.circular(12),),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   inputFormatters: [

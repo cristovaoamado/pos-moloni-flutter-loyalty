@@ -44,6 +44,20 @@ class ScaleConfig {
     this.networkPort = 4001,
   });
 
+  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
+    return ScaleConfig(
+      connectionType: ScaleConnectionType.values[json['connectionType'] ?? 0],
+      protocol: ScaleProtocol.values[json['protocol'] ?? 0],
+      serialPort: json['serialPort'] ?? '',
+      baudRate: json['baudRate'] ?? 9600,
+      dataBits: json['dataBits'] ?? 8,
+      stopBits: json['stopBits'] ?? 1,
+      parity: json['parity'] ?? 0,
+      networkAddress: json['networkAddress'] ?? '',
+      networkPort: json['networkPort'] ?? 4001,
+    );
+  }
+
   final ScaleConnectionType connectionType;
   final ScaleProtocol protocol;
   final String serialPort;
@@ -92,20 +106,6 @@ class ScaleConfig {
         'networkPort': networkPort,
       };
 
-  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
-    return ScaleConfig(
-      connectionType: ScaleConnectionType.values[json['connectionType'] ?? 0],
-      protocol: ScaleProtocol.values[json['protocol'] ?? 0],
-      serialPort: json['serialPort'] ?? '',
-      baudRate: json['baudRate'] ?? 9600,
-      dataBits: json['dataBits'] ?? 8,
-      stopBits: json['stopBits'] ?? 1,
-      parity: json['parity'] ?? 0,
-      networkAddress: json['networkAddress'] ?? '',
-      networkPort: json['networkPort'] ?? 4001,
-    );
-  }
-
   @override
   String toString() =>
       'ScaleConfig(port: $serialPort, baud: $baudRate, protocol: ${protocol.name})';
@@ -135,13 +135,6 @@ class WeightResult {
     this.rawData,
   });
 
-  final bool success;
-  final double? weight;
-  final String unit;
-  final bool isStable;
-  final String? error;
-  final String? rawData;
-
   factory WeightResult.ok(double weight, {bool stable = true, String? raw}) =>
       WeightResult(
         success: true,
@@ -155,6 +148,13 @@ class WeightResult {
         error: error,
         rawData: raw,
       );
+
+  final bool success;
+  final double? weight;
+  final String unit;
+  final bool isStable;
+  final String? error;
+  final String? rawData;
 }
 
 const _scaleConfigKey = 'scale_config';
@@ -163,10 +163,10 @@ const _scaleConfigKey = 'scale_config';
 ///
 /// USO: Sempre usar ScaleService.instance
 class ScaleService {
+  factory ScaleService() => instance;
   // ========== SINGLETON ==========
   ScaleService._internal();
   static final ScaleService instance = ScaleService._internal();
-  factory ScaleService() => instance;
 
   // ========== ESTADO ==========
   final _storage = PlatformStorage.instance;
@@ -305,7 +305,7 @@ class ScaleService {
     try {
       AppLogger.i('⚖️ A conectar: ${_config.serialPort}');
       AppLogger.d(
-          '   Baud: ${_config.baudRate}, Protocol: ${_config.protocol.name}');
+          '   Baud: ${_config.baudRate}, Protocol: ${_config.protocol.name}',);
 
       // Verificar se a porta existe
       final availablePorts = SerialPort.availablePorts;
@@ -341,7 +341,7 @@ class ScaleService {
       // Verificar config aplicada
       final appliedConfig = _port!.config;
       AppLogger.d(
-          '✓ Config aplicada: baud=${appliedConfig.baudRate}, bits=${appliedConfig.bits}');
+          '✓ Config aplicada: baud=${appliedConfig.baudRate}, bits=${appliedConfig.bits}',);
 
       _setConnectionState(ScaleConnectionState.connected);
       _reconnectAttempts = 0;
@@ -452,14 +452,14 @@ class ScaleService {
       if (_maxReconnectAttempts > 0 &&
           _reconnectAttempts > _maxReconnectAttempts) {
         AppLogger.e(
-            '⚖️ Limite de tentativas de reconexão atingido ($_maxReconnectAttempts)');
+            '⚖️ Limite de tentativas de reconexão atingido ($_maxReconnectAttempts)',);
         _cancelReconnect();
         _setConnectionState(ScaleConnectionState.disconnected);
         return;
       }
 
       AppLogger.i(
-          '⚖️ Tentativa de reconexão #$_reconnectAttempts...');
+          '⚖️ Tentativa de reconexão #$_reconnectAttempts...',);
 
       // Verificar se a porta apareceu
       final availablePorts = SerialPort.availablePorts;
@@ -475,7 +475,7 @@ class ScaleService {
         }
       } else {
         AppLogger.d(
-            '⚖️ Porta ${_config.serialPort} ainda não disponível. Portas: $availablePorts');
+            '⚖️ Porta ${_config.serialPort} ainda não disponível. Portas: $availablePorts',);
       }
     });
   }
@@ -530,7 +530,7 @@ class ScaleService {
       // Enviar comando
       final command = _getWeightCommand();
       AppLogger.d(
-          '📤 A enviar comando: ${_bytesToHex(command)} (${command.length} bytes)');
+          '📤 A enviar comando: ${_bytesToHex(command)} (${command.length} bytes)',);
 
       final written = _port!.write(Uint8List.fromList(command));
       AppLogger.d('📤 Bytes escritos: $written');
@@ -568,7 +568,7 @@ class ScaleService {
       final result = _parseWeight(response);
       if (result != null) {
         AppLogger.i(
-            '✅ Peso: ${result.weight} ${result.unit} (estável: ${result.isStable})');
+            '✅ Peso: ${result.weight} ${result.unit} (estável: ${result.isStable})',);
       } else {
         AppLogger.w('⚠️ Não foi possível fazer parse da resposta');
       }
@@ -754,7 +754,7 @@ class ScaleService {
   /// Tenta ler peso em modo passivo (para balanças com transmissão contínua)
   /// Algumas balanças enviam peso automaticamente quando há alteração
   Future<WeightReading?> readWeightPassive(
-      {Duration timeout = const Duration(seconds: 2)}) async {
+      {Duration timeout = const Duration(seconds: 2),}) async {
     if (!_configLoaded) await loadConfig();
     if (!_config.isConfigured) return null;
     if (!isConnected && !await connect()) return null;

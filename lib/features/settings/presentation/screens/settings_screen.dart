@@ -1315,7 +1315,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
               title: const Text('Balança Activa'),
               subtitle: Text(_isEnabled
                   ? 'Leitura de peso activa'
-                  : 'Balança desactivada'),
+                  : 'Balança desactivada',),
               value: _isEnabled,
               onChanged: (value) {
                 setState(() => _isEnabled = value);
@@ -1326,7 +1326,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                     protocol: _protocol,
                     serialPort: '',
                     baudRate: _baudRate,
-                  ));
+                  ),);
                   _scaleService.disconnect();
                 }
               },
@@ -1372,7 +1372,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                         child: Row(
                           children: [
                             Icon(Icons.warning_amber,
-                                color: Theme.of(context).colorScheme.error),
+                                color: Theme.of(context).colorScheme.error,),
                             const SizedBox(width: 12),
                             const Expanded(
                               child: Text(
@@ -1498,8 +1498,8 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: _testSuccess == true
-                        ? Colors.green.withOpacity(0.1)
-                        : Colors.red.withOpacity(0.1),
+                        ? Colors.green.withValues(alpha: 0.1)
+                        : Colors.red.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: _testSuccess == true ? Colors.green : Colors.red,

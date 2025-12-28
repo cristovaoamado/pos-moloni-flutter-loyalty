@@ -18,10 +18,6 @@ class PrintResult {
     this.error,
   });
 
-  final bool success;
-  final String? message;
-  final String? error;
-
   factory PrintResult.ok([String? message]) => PrintResult(
         success: true,
         message: message ?? 'Impressão concluída',
@@ -31,6 +27,10 @@ class PrintResult {
         success: false,
         error: error,
       );
+
+  final bool success;
+  final String? message;
+  final String? error;
 }
 
 /// Item do talão
@@ -68,8 +68,8 @@ class ThermalPrinterService {
 
   // Comandos ESC/POS
   static const List<int> _cmdInit = [0x1B, 0x40]; // ESC @ - Initialize
-  static const List<int> _cmdCut = [0x1D, 0x56, 0x00]; // GS V 0 - Full cut
-  static const List<int> _cmdPartialCut = [0x1D, 0x56, 0x01]; // GS V 1 - Partial cut
+  // static const List<int> _cmdCut = [0x1D, 0x56, 0x00]; // GS V 0 - Full cut
+  // static const List<int> _cmdPartialCut = [0x1D, 0x56, 0x01]; // GS V 1 - Partial cut
   static const List<int> _cmdFeedAndCut = [0x1D, 0x56, 0x41, 0x03]; // Feed and cut
   static const List<int> _cmdAlignLeft = [0x1B, 0x61, 0x00]; // ESC a 0
   static const List<int> _cmdAlignCenter = [0x1B, 0x61, 0x01]; // ESC a 1
@@ -77,7 +77,7 @@ class ThermalPrinterService {
   static const List<int> _cmdBoldOn = [0x1B, 0x45, 0x01]; // ESC E 1
   static const List<int> _cmdBoldOff = [0x1B, 0x45, 0x00]; // ESC E 0
   static const List<int> _cmdDoubleHeight = [0x1B, 0x21, 0x10]; // ESC ! 16
-  static const List<int> _cmdDoubleWidth = [0x1B, 0x21, 0x20]; // ESC ! 32
+  // static const List<int> _cmdDoubleWidth = [0x1B, 0x21, 0x20]; // ESC ! 32
   static const List<int> _cmdDoubleSize = [0x1B, 0x21, 0x30]; // ESC ! 48
   static const List<int> _cmdNormalSize = [0x1B, 0x21, 0x00]; // ESC ! 0
   static const List<int> _cmdFeed1 = [0x0A]; // Line feed
@@ -85,8 +85,8 @@ class ThermalPrinterService {
   
   // Comandos de abertura de gaveta - vários padrões comuns
   static const List<int> _cmdOpenDrawer1 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250 (mais comum)
-  static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
-  static const List<int> _cmdOpenDrawerAlt = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (algumas Star/Citizen)
+  // static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
+  // static const List<int> _cmdOpenDrawerAlt = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (algumas Star/Citizen)
 
   /// Configura a impressora
   void configure(PrinterConfig config) {
@@ -784,8 +784,8 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
       
       // Quantidade x Preço = Total
       final qtyStr = _formatQty(item.quantity, item.unit);
-      final priceStr = '${item.unitPrice.toStringAsFixed(2)}';
-      final totalStr = '${item.total.toStringAsFixed(2)}';
+      final priceStr = item.unitPrice.toStringAsFixed(2);
+      final totalStr = item.total.toStringAsFixed(2);
       final line = '  $qtyStr x $priceStr';
       final padding = width - line.length - totalStr.length;
       bytes.addAll(_textToBytes('$line${' ' * (padding > 0 ? padding : 1)}$totalStr'));
@@ -937,7 +937,7 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
                       mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                       children: [
                         pw.Text('  ${_formatQty(item.quantity, item.unit)} x ${item.unitPrice.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 9)),
-                        pw.Text('${item.total.toStringAsFixed(2)}', style: const pw.TextStyle(fontSize: 9)),
+                        pw.Text(item.total.toStringAsFixed(2), style: const pw.TextStyle(fontSize: 9)),
                       ],
                     ),
                     if (item.discount > 0)
@@ -949,7 +949,7 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
                         ],
                       ),
                   ],
-                )),
+                ),),
                 pw.Divider(),
 
                 // Totais
