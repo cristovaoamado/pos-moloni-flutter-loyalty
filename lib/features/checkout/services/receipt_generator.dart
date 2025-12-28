@@ -153,7 +153,7 @@ class ReceiptConfig {
   final String programCertification;
 
   static const ReceiptConfig paper58mm = ReceiptConfig(paperWidthMm: 58, marginMm: 2);
-  static const ReceiptConfig paper80mm = ReceiptConfig(paperWidthMm: 80, marginMm: 3);
+  static const ReceiptConfig paper80mm = ReceiptConfig(paperWidthMm: 80, marginMm: 5);
 
   PdfPageFormat get pageFormat => PdfPageFormat(
     paperWidthMm * PdfPageFormat.mm,

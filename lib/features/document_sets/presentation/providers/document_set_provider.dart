@@ -28,11 +28,12 @@ class DocumentSetState {
     DocumentTypeOption? selectedOption,
     bool? isLoading,
     String? error,
+    bool clearSelectedOption = false,
   }) {
     return DocumentSetState(
       documentSets: documentSets ?? this.documentSets,
       documentTypeOptions: documentTypeOptions ?? this.documentTypeOptions,
-      selectedOption: selectedOption ?? this.selectedOption,
+      selectedOption: clearSelectedOption ? null : (selectedOption ?? this.selectedOption),
       isLoading: isLoading ?? this.isLoading,
       error: error,
     );
@@ -60,9 +61,9 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
 
   /// Tipos de documento suportados no POS
   static const List<DocumentTypeId> _supportedTypes = [
-    DocumentTypeId.simplifiedInvoice,
-    DocumentTypeId.invoice,
-    DocumentTypeId.invoiceReceipt,
+    DocumentTypeId.simplifiedInvoice,  // FS - Fatura Simplificada
+    DocumentTypeId.invoice,            // FT - Fatura
+    DocumentTypeId.invoiceReceipt,     // FR - Fatura-Recibo
   ];
 
   /// Carrega as séries de documentos
@@ -76,11 +77,16 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
 
       AppLogger.i('✅ Carregadas ${sets.length} séries');
 
-      // Criar opções combinando séries com tipos de documento
-      // IMPORTANTE: Criar opções para TODOS os tipos suportados em cada série
-      // Isto permite usar qualquer tipo de documento disponível no POS
-      final options = <DocumentTypeOption>[];
-      
+      if (sets.isEmpty) {
+        AppLogger.w('⚠️ Nenhuma série de documentos encontrada');
+        state = state.copyWith(
+          documentSets: [],
+          documentTypeOptions: [],
+          isLoading: false,
+        );
+        return;
+      }
+
       // Encontrar a série default ou a primeira série disponível
       DocumentSet? defaultSet;
       for (final docSet in sets) {
@@ -89,47 +95,40 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
           break;
         }
       }
-      defaultSet ??= sets.isNotEmpty ? sets.first : null;
-      
-      if (defaultSet == null) {
-        AppLogger.w('⚠️ Nenhuma série de documentos encontrada');
-        state = state.copyWith(
-          documentSets: sets,
-          documentTypeOptions: [],
-          isLoading: false,
-        );
-        return;
-      }
-      
+      defaultSet ??= sets.first;
+
       AppLogger.d('📄 Série default: "${defaultSet.name}" (ID: ${defaultSet.id})');
-      
-      // Criar opções para TODOS os tipos suportados usando a série default
-      // Isto garante que o utilizador pode escolher FS, FT ou FR
+
+      // Criar opções para TODOS os tipos suportados em cada série
+      final options = <DocumentTypeOption>[];
+
+      // Primeiro adicionar opções da série default
       for (final docType in _supportedTypes) {
-        options.add(DocumentTypeOption(
+        final option = DocumentTypeOption(
           documentSet: defaultSet,
           documentType: docType,
-        ),);
-        AppLogger.d('   ✓ Adicionado: ${docType.name} - ${defaultSet.name}');
+        );
+        options.add(option);
+        AppLogger.d('   ✓ ${option.displayName}');
       }
-      
-      // Se há outras séries, adicionar também as suas opções
+
+      // Depois adicionar opções das outras séries
       for (final docSet in sets) {
-        if (docSet.id == defaultSet.id) continue; // Já adicionámos
-        
+        if (docSet.id == defaultSet.id) continue;
+
         AppLogger.d('📄 Série adicional: "${docSet.name}" (ID: ${docSet.id})');
-        
-        // Adicionar todos os tipos suportados para esta série também
+
         for (final docType in _supportedTypes) {
-          options.add(DocumentTypeOption(
+          final option = DocumentTypeOption(
             documentSet: docSet,
             documentType: docType,
-          ),);
-          AppLogger.d('   ✓ Adicionado: ${docType.name} - ${docSet.name}');
+          );
+          options.add(option);
+          AppLogger.d('   ✓ ${option.displayName}');
         }
       }
 
-      // Ordenar: primeiro por tipo, depois por nome da série
+      // Ordenar: primeiro por tipo (FS, FT, FR), depois por nome da série
       options.sort((a, b) {
         final typeCompare = _supportedTypes.indexOf(a.documentType)
             .compareTo(_supportedTypes.indexOf(b.documentType));
@@ -137,16 +136,15 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
         return a.documentSet.name.compareTo(b.documentSet.name);
       });
 
-      // Selecionar opção default (Fatura Simplificada da série default)
-      DocumentTypeOption? defaultOption;
-      if (options.isNotEmpty) {
-        // Tentar encontrar Fatura Simplificada da série default
-        defaultOption = options.firstWhere(
-          (o) => o.documentType == DocumentTypeId.simplifiedInvoice && 
-                 o.documentSet.id == defaultSet!.id,
-          orElse: () => options.first,
-        );
-      }
+      // Selecionar Fatura Simplificada da série default por defeito
+      final defaultOption = options.firstWhere(
+        (o) => o.documentType == DocumentTypeId.simplifiedInvoice &&
+               o.documentSet.id == defaultSet!.id,
+        orElse: () => options.first,
+      );
+
+      AppLogger.i('📄 ${options.length} opções de documento criadas');
+      AppLogger.i('📄 Opção pré-selecionada: ${defaultOption.displayName}');
 
       state = state.copyWith(
         documentSets: sets,
@@ -155,13 +153,6 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
         isLoading: false,
       );
 
-      AppLogger.i('📄 ${options.length} opções de documento disponíveis');
-      for (final opt in options) {
-        AppLogger.d('   - ${opt.displayName} (set: ${opt.documentSet.id}, type: ${opt.documentType.id})');
-      }
-      if (defaultOption != null) {
-        AppLogger.i('📄 Opção selecionada: ${defaultOption.displayName}');
-      }
     } catch (e) {
       AppLogger.e('❌ Erro ao carregar séries: $e');
       state = state.copyWith(
@@ -185,11 +176,31 @@ class DocumentSetNotifier extends StateNotifier<DocumentSetState> {
   }
 
   /// Obtém opções agrupadas por tipo de documento
+  /// Retorna um Map onde a chave é o DocumentTypeId e o valor é a lista de opções
   Map<DocumentTypeId, List<DocumentTypeOption>> get groupedOptions {
     final grouped = <DocumentTypeId, List<DocumentTypeOption>>{};
+
+    // Inicializar com listas vazias para todos os tipos suportados
     for (final type in _supportedTypes) {
-      grouped[type] = getOptionsByType(type);
+      grouped[type] = <DocumentTypeOption>[];
     }
+
+    // Preencher com as opções do state
+    for (final option in state.documentTypeOptions) {
+      if (grouped.containsKey(option.documentType)) {
+        grouped[option.documentType]!.add(option);
+      }
+    }
+
+    // Debug log
+    AppLogger.d('📄 groupedOptions chamado:');
+    for (final entry in grouped.entries) {
+      AppLogger.d('   - ${entry.key.name}: ${entry.value.length} opções');
+      for (final opt in entry.value) {
+        AppLogger.d('      • ${opt.documentSet.name}');
+      }
+    }
+
     return grouped;
   }
 

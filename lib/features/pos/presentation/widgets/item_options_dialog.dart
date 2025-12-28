@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -27,12 +29,13 @@ class ItemOptionsDialog extends StatefulWidget {
   State<ItemOptionsDialog> createState() => _ItemOptionsDialogState();
 }
 
-class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTickerProviderStateMixin {
+class _ItemOptionsDialogState extends State<ItemOptionsDialog>
+    with SingleTickerProviderStateMixin {
   late TabController _tabController;
   late TextEditingController _qtyController;
   late TextEditingController _discountController;
   late TextEditingController _priceController;
-  
+
   // Focus nodes
   final _qtyFocusNode = FocusNode();
   final _discountFocusNode = FocusNode();
@@ -40,43 +43,57 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
 
   late double _currentQty;
   late double _currentDiscount;
-  late double _currentPriceWithTax; // Preço COM IVA (PVP) - o que o utilizador vê/edita
+  late double _currentPriceWithTax;
 
-  /// Taxa de IVA do produto
   double get _taxRate => widget.item.taxRate;
-
-  /// Converte preço COM IVA para preço SEM IVA
   double get _priceWithoutTax => _currentPriceWithTax / (1 + _taxRate / 100);
 
-  // Estado da balança
-  final ScaleService _scaleService = ScaleService();
+  // Estado da balança - usa singleton
+  final ScaleService _scaleService = ScaleService.instance;
   bool _isReadingScale = false;
   String? _scaleError;
+  
+  // Subscrição para o estado da conexão
+  StreamSubscription<ScaleConnectionState>? _connectionSubscription;
+  ScaleConnectionState _scaleConnectionState = ScaleConnectionState.disconnected;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
+    _tabController =
+        TabController(length: 3, vsync: this, initialIndex: widget.initialTab);
 
     _currentQty = widget.item.quantity;
     _currentDiscount = widget.item.discount;
-    _currentPriceWithTax = widget.item.unitPriceWithTax; // Preço COM IVA (PVP)
+    _currentPriceWithTax = widget.item.unitPriceWithTax;
 
     _qtyController = TextEditingController(text: _formatNumber(_currentQty));
     _discountController = TextEditingController(
       text: _currentDiscount > 0 ? _currentDiscount.toStringAsFixed(0) : '',
     );
-    _priceController = TextEditingController(text: _currentPriceWithTax.toStringAsFixed(2));
+    _priceController =
+        TextEditingController(text: _currentPriceWithTax.toStringAsFixed(2));
 
-    // Carregar configuração da balança
-    _scaleService.loadConfig();
+    // Obter estado inicial da conexão
+    _scaleConnectionState = _scaleService.connectionState;
+    
+    // Subscrever às mudanças de estado da balança
+    _connectionSubscription = _scaleService.connectionStateStream.listen((state) {
+      if (mounted) {
+        setState(() {
+          _scaleConnectionState = state;
+          // Limpar erro se reconectou com sucesso
+          if (state == ScaleConnectionState.connected) {
+            _scaleError = null;
+          }
+        });
+      }
+    });
 
-    // Selecionar texto e dar focus após o frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusCurrentTab();
     });
 
-    // Listener para mudança de tab
     _tabController.addListener(() {
       if (!_tabController.indexIsChanging) {
         _focusCurrentTab();
@@ -112,6 +129,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
 
   @override
   void dispose() {
+    _connectionSubscription?.cancel();
     _tabController.dispose();
     _qtyController.dispose();
     _discountController.dispose();
@@ -119,12 +137,17 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
     _qtyFocusNode.dispose();
     _discountFocusNode.dispose();
     _priceFocusNode.dispose();
-    _scaleService.dispose();
     super.dispose();
   }
 
-  /// Lê o peso da balança
   Future<void> _readFromScale() async {
+    if (!_scaleService.isConfigured) {
+      setState(() {
+        _scaleError = 'Balança não configurada. Configura nas Definições.';
+      });
+      return;
+    }
+
     setState(() {
       _isReadingScale = true;
       _scaleError = null;
@@ -132,14 +155,14 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
 
     try {
       final reading = await _scaleService.readWeight();
-      
+
       if (reading != null) {
         setState(() {
           _currentQty = reading.weight;
           _qtyController.text = _formatNumber(_currentQty);
           _isReadingScale = false;
         });
-        
+
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -147,10 +170,12 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 children: [
                   const Icon(Icons.scale, color: Colors.white),
                   const SizedBox(width: 8),
-                  Text('Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}'),
+                  Text(
+                      'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}'),
                   if (!reading.isStable) ...[
                     const SizedBox(width: 8),
-                    const Text('(instável)', style: TextStyle(fontStyle: FontStyle.italic)),
+                    const Text('(instável)',
+                        style: TextStyle(fontStyle: FontStyle.italic)),
                   ],
                 ],
               ),
@@ -162,7 +187,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
       } else {
         setState(() {
           _isReadingScale = false;
-          _scaleError = 'Não foi possível ler o peso';
+          _scaleError = _getScaleErrorMessage();
         });
       }
     } catch (e) {
@@ -173,11 +198,24 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
     }
   }
 
+  /// Retorna mensagem de erro apropriada baseada no estado da conexão
+  String _getScaleErrorMessage() {
+    switch (_scaleConnectionState) {
+      case ScaleConnectionState.disconnected:
+        return 'Balança desconectada. Verifique o cabo.';
+      case ScaleConnectionState.reconnecting:
+        return 'A tentar reconectar à balança...';
+      case ScaleConnectionState.connecting:
+        return 'A conectar à balança...';
+      case ScaleConnectionState.connected:
+        return 'Não foi possível ler o peso. Tente novamente.';
+    }
+  }
+
   String _formatNumber(double value) {
     if (value == value.roundToDouble()) {
       return value.toInt().toString();
     }
-    // Remove zeros à direita mas mantém até 3 casas decimais
     String formatted = value.toStringAsFixed(3);
     while (formatted.endsWith('0')) {
       formatted = formatted.substring(0, formatted.length - 1);
@@ -198,7 +236,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   void _confirm() {
     widget.onQuantityChanged(_currentQty);
     widget.onDiscountChanged(_currentDiscount);
-    // Enviar preço SEM IVA (a API Moloni espera preço sem IVA)
     widget.onPriceChanged(_priceWithoutTax);
     Navigator.pop(context);
   }
@@ -209,14 +246,14 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
       focusNode: FocusNode(),
       autofocus: true,
       onKeyEvent: (event) {
-        if (event is KeyDownEvent && 
+        if (event is KeyDownEvent &&
             event.logicalKey == LogicalKeyboardKey.enter) {
           _confirm();
         }
       },
       child: Dialog(
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.zero, // SEM cantos arredondados
+          borderRadius: BorderRadius.zero,
         ),
         child: Container(
           width: 400,
@@ -254,12 +291,10 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildHeader(BuildContext context) {
-    // IGUAL AO CHECKOUT: usa colorScheme.primary com texto branco
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.primary, // IGUAL ao checkout
-        // SEM borderRadius - cantos rectos
+        color: Theme.of(context).colorScheme.primary,
       ),
       child: Row(
         children: [
@@ -270,9 +305,9 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 Text(
                   widget.item.name,
                   style: const TextStyle(
-                    fontWeight: FontWeight.bold, 
+                    fontWeight: FontWeight.bold,
                     fontSize: 16,
-                    color: Colors.white, // Texto branco
+                    color: Colors.white,
                   ),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -281,7 +316,7 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                   'Ref: ${widget.item.product.reference}',
                   style: TextStyle(
                     fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.7), // Texto branco semi-transparente
+                    color: Colors.white.withValues(alpha: 0.7),
                   ),
                 ),
               ],
@@ -332,14 +367,13 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 
   Widget _buildQuantityTab(BuildContext context) {
-    // Verificar se a unidade é pesável (kg, g, etc.)
     final unit = widget.item.measureUnit.toLowerCase();
-    final isWeighable = unit.contains('kg') || 
-                        unit.contains('g') || 
-                        unit == 'quilograma' || 
-                        unit == 'quilogramas' ||
-                        unit == 'grama' ||
-                        unit == 'gramas';
+    final isWeighable = unit.contains('kg') ||
+        unit.contains('g') ||
+        unit == 'quilograma' ||
+        unit == 'quilogramas' ||
+        unit == 'grama' ||
+        unit == 'gramas';
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -350,7 +384,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              // Botão - com cor igual ao método de pagamento selecionado (primary)
               _CircleButton(
                 icon: Icons.remove,
                 onPressed: () => _updateQuantity(-1),
@@ -359,17 +392,19 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 foregroundColor: Colors.white,
               ),
               const SizedBox(width: 16),
-              // Input SEM label de unidade (removido Kg, Un, etc.)
               SizedBox(
                 width: 140,
                 child: TextField(
                   controller: _qtyController,
                   focusNode: _qtyFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 32, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   inputFormatters: [
@@ -384,7 +419,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 ),
               ),
               const SizedBox(width: 16),
-              // Botão + com cor igual ao método de pagamento selecionado (primary)
               _CircleButton(
                 icon: Icons.add,
                 onPressed: () => _updateQuantity(1),
@@ -395,27 +429,39 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             ],
           ),
           const SizedBox(height: 16),
-          
-          // Botão de leitura da balança (só para produtos pesáveis)
-          // Cor igual aos botões de valor rápido (secondaryContainer com texto verde)
           if (isWeighable) ...[
+            // Indicador de estado da balança
+            _buildScaleStatusIndicator(context),
+            const SizedBox(height: 8),
             ElevatedButton.icon(
-              onPressed: _isReadingScale ? null : _readFromScale,
+              onPressed: _isReadingScale || 
+                  _scaleConnectionState == ScaleConnectionState.reconnecting
+                  ? null 
+                  : _readFromScale,
               icon: _isReadingScale
                   ? SizedBox(
                       width: 18,
                       height: 18,
                       child: CircularProgressIndicator(
                         strokeWidth: 2,
-                        color: Theme.of(context).colorScheme.onSecondaryContainer,
+                        color:
+                            Theme.of(context).colorScheme.onSecondaryContainer,
                       ),
                     )
-                  : const Icon(Icons.scale, size: 20),
-              label: Text(_isReadingScale ? 'A ler...' : 'Ler da Balança'),
+                  : Icon(
+                      _scaleConnectionState == ScaleConnectionState.connected
+                          ? Icons.scale
+                          : Icons.scale_outlined,
+                      size: 20,
+                    ),
+              label: Text(_getScaleButtonLabel()),
               style: ElevatedButton.styleFrom(
-                backgroundColor: Theme.of(context).colorScheme.secondaryContainer, // Lima/verde claro
-                foregroundColor: Theme.of(context).colorScheme.onSecondaryContainer, // Texto verde
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                backgroundColor:
+                    Theme.of(context).colorScheme.secondaryContainer,
+                foregroundColor:
+                    Theme.of(context).colorScheme.onSecondaryContainer,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
               ),
             ),
             if (_scaleError != null) ...[
@@ -430,7 +476,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             ],
             const SizedBox(height: 8),
           ],
-          
           const SizedBox(height: 8),
           Text(
             'Total: ${(_currentQty * _currentPriceWithTax * (1 - _currentDiscount / 100)).toStringAsFixed(2)} €',
@@ -445,6 +490,87 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
     );
   }
 
+  /// Constrói o indicador de estado da balança
+  Widget _buildScaleStatusIndicator(BuildContext context) {
+    final Color statusColor;
+    final IconData statusIcon;
+    final String statusText;
+
+    switch (_scaleConnectionState) {
+      case ScaleConnectionState.connected:
+        statusColor = Colors.green;
+        statusIcon = Icons.check_circle;
+        statusText = 'Balança conectada';
+        break;
+      case ScaleConnectionState.connecting:
+        statusColor = Colors.orange;
+        statusIcon = Icons.sync;
+        statusText = 'A conectar...';
+        break;
+      case ScaleConnectionState.reconnecting:
+        statusColor = Colors.orange;
+        statusIcon = Icons.sync;
+        statusText = 'A reconectar...';
+        break;
+      case ScaleConnectionState.disconnected:
+        statusColor = Colors.red;
+        statusIcon = Icons.error_outline;
+        statusText = 'Balança desconectada';
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: statusColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: statusColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (_scaleConnectionState == ScaleConnectionState.connecting ||
+              _scaleConnectionState == ScaleConnectionState.reconnecting)
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                color: statusColor,
+              ),
+            )
+          else
+            Icon(statusIcon, size: 14, color: statusColor),
+          const SizedBox(width: 6),
+          Text(
+            statusText,
+            style: TextStyle(
+              fontSize: 12,
+              color: statusColor,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Retorna o label do botão da balança baseado no estado
+  String _getScaleButtonLabel() {
+    if (_isReadingScale) return 'A ler...';
+    
+    switch (_scaleConnectionState) {
+      case ScaleConnectionState.connected:
+        return 'Ler da Balança';
+      case ScaleConnectionState.connecting:
+        return 'A conectar...';
+      case ScaleConnectionState.reconnecting:
+        return 'A reconectar...';
+      case ScaleConnectionState.disconnected:
+        return 'Balança offline';
+    }
+  }
+
   Widget _buildDiscountTab(BuildContext context) {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -452,7 +578,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
         mainAxisAlignment: MainAxisAlignment.center,
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Input + Label % (fora da caixa)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -462,17 +587,23 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 child: TextField(
                   controller: _discountController,
                   focusNode: _discountFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 32, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                     hintText: '0',
                     hintStyle: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
-                      color: Theme.of(context).colorScheme.outline.withValues(alpha: 0.5),
+                      color: Theme.of(context)
+                          .colorScheme
+                          .outline
+                          .withValues(alpha: 0.5),
                     ),
                   ),
                   inputFormatters: [
@@ -492,7 +623,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             ],
           ),
           const SizedBox(height: 16),
-          // Botões rápidos - MESMA COR dos botões de valor entregue (secondaryContainer)
           Wrap(
             alignment: WrapAlignment.center,
             spacing: 6,
@@ -508,19 +638,23 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                     });
                   },
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: isSelected 
-                        ? Theme.of(context).colorScheme.primary // Selecionado = primary
-                        : Theme.of(context).colorScheme.secondaryContainer, // Normal = lima/verde
-                    foregroundColor: isSelected 
-                        ? Colors.white 
+                    backgroundColor: isSelected
+                        ? Theme.of(context).colorScheme.primary
+                        : Theme.of(context).colorScheme.secondaryContainer,
+                    foregroundColor: isSelected
+                        ? Colors.white
                         : Theme.of(context).colorScheme.onSecondaryContainer,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
                     minimumSize: const Size(50, 40),
-                    side: isSelected ? const BorderSide(color: Colors.white, width: 2) : null,
+                    side: isSelected
+                        ? const BorderSide(color: Colors.white, width: 2)
+                        : null,
                   ),
                   child: Text(
                     '$d%',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 13),
                   ),
                 );
               }),
@@ -546,8 +680,8 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             Text(
               'Desconto: -${(_currentQty * _currentPriceWithTax * _currentDiscount / 100).toStringAsFixed(2)} €',
               style: TextStyle(
-                fontSize: 16, 
-                color: Theme.of(context).colorScheme.primary, 
+                fontSize: 16,
+                color: Theme.of(context).colorScheme.primary,
                 fontWeight: FontWeight.w500,
               ),
             ),
@@ -568,7 +702,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
             style: TextStyle(color: Theme.of(context).colorScheme.outline),
           ),
           const SizedBox(height: 20),
-          // Input + Label € (fora da caixa) - Preço COM IVA (PVP)
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.center,
@@ -578,11 +711,14 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
                 child: TextField(
                   controller: _priceController,
                   focusNode: _priceFocusNode,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 32, fontWeight: FontWeight.bold),
                   decoration: InputDecoration(
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12)),
                     contentPadding: const EdgeInsets.symmetric(vertical: 16),
                   ),
                   inputFormatters: [
@@ -609,7 +745,8 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
               onPressed: () {
                 setState(() {
                   _currentPriceWithTax = widget.item.product.priceWithTax;
-                  _priceController.text = _currentPriceWithTax.toStringAsFixed(2);
+                  _priceController.text =
+                      _currentPriceWithTax.toStringAsFixed(2);
                 });
               },
               icon: const Icon(Icons.restore, size: 18),
@@ -621,7 +758,6 @@ class _ItemOptionsDialogState extends State<ItemOptionsDialog> with SingleTicker
   }
 }
 
-/// Botão circular para +/-
 class _CircleButton extends StatelessWidget {
   const _CircleButton({
     required this.icon,

@@ -1,46 +1,33 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_libserialport/flutter_libserialport.dart';
-import 'package:flutter_secure_storage/flutter_secure_storage.dart';
-
-import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/core/services/storage_service.dart';
+import 'package:pos_moloni_app/core/utils/logger.dart';
 
-/// Protocolo de comunicação da balança
-enum ScaleProtocol {
-  /// Protocolo genérico (texto simples com peso)
-  generic,
-
-  /// Protocolo Dibal (G-310, G-325, etc.)
-  dibal,
-
-  /// Protocolo Toledo
-  toledo,
-
-  /// Protocolo Mettler-Toledo
-  mettlerToledo,
-
-  /// Protocolo CAS
-  cas,
-
-  /// Protocolo Epelsa
-  epelsa,
+/// Tipo de conexão da balança
+enum ScaleConnectionType {
+  serial,
+  network,
 }
 
-/// Tipo de conexão com a balança
-enum ScaleConnectionType {
-  /// Conexão via porta série (RS-232/USB-Serial)
-  serial,
+/// Protocolo da balança
+enum ScaleProtocol {
+  dibal,
+  toledo,
+  mettlerToledo,
+  cas,
+  epelsa,
+  generic,
+}
 
-  /// Conexão via rede TCP/IP
-  tcp,
-
-  /// Conexão via HTTP/REST API
-  http,
+/// Estado da conexão da balança
+enum ScaleConnectionState {
+  disconnected,
+  connecting,
+  connected,
+  reconnecting,
 }
 
 /// Configuração da balança
@@ -48,851 +35,920 @@ class ScaleConfig {
   const ScaleConfig({
     this.connectionType = ScaleConnectionType.serial,
     this.protocol = ScaleProtocol.dibal,
-    this.host = '192.168.1.100',
-    this.port = 3000,
     this.serialPort = '',
     this.baudRate = 9600,
     this.dataBits = 8,
     this.stopBits = 1,
-    this.parity = SerialPortParity.none,
-    this.timeout = const Duration(seconds: 5),
-    this.requestCommand,
-    this.weightRegex,
-    this.decimalPlaces = 3,
+    this.parity = 0,
+    this.networkAddress = '',
+    this.networkPort = 4001,
   });
 
-  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
-    return ScaleConfig(
-      connectionType: ScaleConnectionType.values.firstWhere(
-        (e) => e.name == json['connectionType'],
-        orElse: () => ScaleConnectionType.serial,
-      ),
-      protocol: ScaleProtocol.values.firstWhere(
-        (e) => e.name == json['protocol'],
-        orElse: () => ScaleProtocol.dibal,
-      ),
-      host: json['host'] ?? '192.168.1.100',
-      port: json['port'] ?? 3000,
-      serialPort: json['serialPort'] ?? '',
-      baudRate: json['baudRate'] ?? 9600,
-      dataBits: json['dataBits'] ?? 8,
-      stopBits: json['stopBits'] ?? 1,
-      parity: json['parity'] ?? SerialPortParity.none,
-      timeout: Duration(milliseconds: json['timeout'] ?? 3000),
-      requestCommand: json['requestCommand'],
-      weightRegex: json['weightRegex'],
-      decimalPlaces: json['decimalPlaces'] ?? 3,
-    );
-  }
-
-  /// Tipo de conexão
   final ScaleConnectionType connectionType;
-
-  /// Protocolo da balança
   final ScaleProtocol protocol;
-
-  /// Host para conexão TCP/HTTP
-  final String host;
-
-  /// Porta para conexão TCP/HTTP
-  final int port;
-
-  /// Porta série (ex: COM3 no Windows, /dev/ttyUSB0 no Linux)
   final String serialPort;
-
-  /// Baud rate para conexão serial
   final int baudRate;
-
-  /// Data bits (normalmente 8)
   final int dataBits;
-
-  /// Stop bits (normalmente 1)
   final int stopBits;
-
-  /// Paridade
   final int parity;
+  final String networkAddress;
+  final int networkPort;
 
-  /// Timeout para leitura
-  final Duration timeout;
-
-  /// Comando para solicitar peso (opcional)
-  final String? requestCommand;
-
-  /// Regex para extrair peso da resposta (opcional)
-  final String? weightRegex;
-
-  /// Casas decimais do peso
-  final int decimalPlaces;
-
-  /// Configuração padrão para Dibal G-325 RS-232
-  /// Configuração típica: 9600 baud, 8N1
-  static const ScaleConfig dibalG325 = ScaleConfig(
-    connectionType: ScaleConnectionType.serial,
-    protocol: ScaleProtocol.dibal,
-    serialPort: '', // Será detectado automaticamente ou configurado
-    baudRate: 9600,
-    dataBits: 8,
-    stopBits: 1,
-    parity: SerialPortParity.none,
-    decimalPlaces: 3,
-  );
-
-  /// Configuração alternativa Dibal com paridade par
-  static const ScaleConfig dibalG325Parity = ScaleConfig(
-    connectionType: ScaleConnectionType.serial,
-    protocol: ScaleProtocol.dibal,
-    serialPort: '',
-    baudRate: 9600,
-    dataBits: 7,
-    stopBits: 1,
-    parity: SerialPortParity.even,
-    decimalPlaces: 3,
-  );
+  bool get isConfigured => serialPort.isNotEmpty || networkAddress.isNotEmpty;
 
   ScaleConfig copyWith({
     ScaleConnectionType? connectionType,
     ScaleProtocol? protocol,
-    String? host,
-    int? port,
     String? serialPort,
     int? baudRate,
     int? dataBits,
     int? stopBits,
     int? parity,
-    Duration? timeout,
-    String? requestCommand,
-    String? weightRegex,
-    int? decimalPlaces,
+    String? networkAddress,
+    int? networkPort,
   }) {
     return ScaleConfig(
       connectionType: connectionType ?? this.connectionType,
       protocol: protocol ?? this.protocol,
-      host: host ?? this.host,
-      port: port ?? this.port,
       serialPort: serialPort ?? this.serialPort,
       baudRate: baudRate ?? this.baudRate,
       dataBits: dataBits ?? this.dataBits,
       stopBits: stopBits ?? this.stopBits,
       parity: parity ?? this.parity,
-      timeout: timeout ?? this.timeout,
-      requestCommand: requestCommand ?? this.requestCommand,
-      weightRegex: weightRegex ?? this.weightRegex,
-      decimalPlaces: decimalPlaces ?? this.decimalPlaces,
+      networkAddress: networkAddress ?? this.networkAddress,
+      networkPort: networkPort ?? this.networkPort,
     );
   }
 
   Map<String, dynamic> toJson() => {
-        'connectionType': connectionType.name,
-        'protocol': protocol.name,
-        'host': host,
-        'port': port,
+        'connectionType': connectionType.index,
+        'protocol': protocol.index,
         'serialPort': serialPort,
         'baudRate': baudRate,
         'dataBits': dataBits,
         'stopBits': stopBits,
         'parity': parity,
-        'timeout': timeout.inMilliseconds,
-        'requestCommand': requestCommand,
-        'weightRegex': weightRegex,
-        'decimalPlaces': decimalPlaces,
+        'networkAddress': networkAddress,
+        'networkPort': networkPort,
       };
-}
 
-/// Resultado da leitura de peso
-class ScaleReading {
-  const ScaleReading({
-    required this.weight,
-    required this.unit,
-    required this.isStable,
-    this.rawData,
-  });
-
-  /// Peso lido (em kg)
-  final double weight;
-
-  /// Unidade (kg, g, lb, etc.)
-  final String unit;
-
-  /// Se a leitura está estável
-  final bool isStable;
-
-  /// Dados brutos da balança (para debug)
-  final String? rawData;
+  factory ScaleConfig.fromJson(Map<String, dynamic> json) {
+    return ScaleConfig(
+      connectionType: ScaleConnectionType.values[json['connectionType'] ?? 0],
+      protocol: ScaleProtocol.values[json['protocol'] ?? 0],
+      serialPort: json['serialPort'] ?? '',
+      baudRate: json['baudRate'] ?? 9600,
+      dataBits: json['dataBits'] ?? 8,
+      stopBits: json['stopBits'] ?? 1,
+      parity: json['parity'] ?? 0,
+      networkAddress: json['networkAddress'] ?? '',
+      networkPort: json['networkPort'] ?? 4001,
+    );
+  }
 
   @override
   String toString() =>
-      'ScaleReading(${weight.toStringAsFixed(3)} $unit, stable: $isStable)';
+      'ScaleConfig(port: $serialPort, baud: $baudRate, protocol: ${protocol.name})';
 }
 
-/// Serviço para comunicação com balanças
+/// Resultado da leitura de peso
+class WeightReading {
+  const WeightReading({
+    required this.weight,
+    this.unit = 'kg',
+    this.isStable = true,
+  });
+
+  final double weight;
+  final String unit;
+  final bool isStable;
+}
+
+/// Resultado da leitura (para compatibilidade)
+class WeightResult {
+  const WeightResult({
+    required this.success,
+    this.weight,
+    this.unit = 'kg',
+    this.isStable = false,
+    this.error,
+    this.rawData,
+  });
+
+  final bool success;
+  final double? weight;
+  final String unit;
+  final bool isStable;
+  final String? error;
+  final String? rawData;
+
+  factory WeightResult.ok(double weight, {bool stable = true, String? raw}) =>
+      WeightResult(
+        success: true,
+        weight: weight,
+        isStable: stable,
+        rawData: raw,
+      );
+
+  factory WeightResult.fail(String error, {String? raw}) => WeightResult(
+        success: false,
+        error: error,
+        rawData: raw,
+      );
+}
+
+const _scaleConfigKey = 'scale_config';
+
+/// Serviço de balança (SINGLETON) com reconexão automática
+///
+/// USO: Sempre usar ScaleService.instance
 class ScaleService {
-  ScaleService({
-    ScaleConfig? config,
-    FlutterSecureStorage? storage,
-  }) : _storage = storage ?? PlatformStorage.instance {
-    // ↑ USA PLATFORMSTORAGE (compatível com macOS)
-    _config = config ?? ScaleConfig.dibalG325;
-  }
+  // ========== SINGLETON ==========
+  ScaleService._internal();
+  static final ScaleService instance = ScaleService._internal();
+  factory ScaleService() => instance;
 
-  final FlutterSecureStorage _storage;
-  late ScaleConfig _config;
+  // ========== ESTADO ==========
+  final _storage = PlatformStorage.instance;
+  SerialPort? _port;
+  ScaleConfig _config = const ScaleConfig();
+  bool _configLoaded = false;
 
-  SerialPort? _serialPort;
-  bool _isConnected = false;
+  // ========== RECONEXÃO AUTOMÁTICA ==========
+  Timer? _reconnectTimer;
+  Timer? _portMonitorTimer;
+  ScaleConnectionState _connectionState = ScaleConnectionState.disconnected;
+  int _reconnectAttempts = 0;
+  static const int _maxReconnectAttempts = 0; // 0 = infinito
+  static const Duration _reconnectInterval = Duration(seconds: 3);
+  static const Duration _portMonitorInterval = Duration(seconds: 2);
 
-  /// Configuração actual
+  // Stream para notificar mudanças de estado
+  final _connectionStateController =
+      StreamController<ScaleConnectionState>.broadcast();
+  Stream<ScaleConnectionState> get connectionStateStream =>
+      _connectionStateController.stream;
+
   ScaleConfig get config => _config;
+  bool get isConfigured => _config.isConfigured;
+  bool get isConnected =>
+      (_port?.isOpen ?? false) && _connectionState == ScaleConnectionState.connected;
+  ScaleConnectionState get connectionState => _connectionState;
 
-  /// Se está conectado
-  bool get isConnected => _isConnected;
+  // ========== MÉTODOS ESTÁTICOS ==========
 
-  /// Lista as portas série disponíveis
   static List<String> getAvailablePorts() {
     try {
-      final ports = SerialPort.availablePorts;
-      AppLogger.d('⚖️ Portas série disponíveis: $ports');
-      return ports;
+      return SerialPort.availablePorts;
     } catch (e) {
-      AppLogger.e('⚖️ Erro ao listar portas série', error: e);
+      AppLogger.e('Erro ao listar portas: $e');
       return [];
     }
   }
 
-  /// Obtém informação detalhada de uma porta
   static Map<String, String> getPortInfo(String portName) {
     try {
       final port = SerialPort(portName);
       final info = {
         'name': portName,
-        'description': port.description ?? 'N/A',
-        'manufacturer': port.manufacturer ?? 'N/A',
-        'serialNumber': port.serialNumber ?? 'N/A',
-        'productId': port.productId?.toString() ?? 'N/A',
-        'vendorId': port.vendorId?.toString() ?? 'N/A',
+        'description': port.description ?? '',
+        'manufacturer': port.manufacturer ?? '',
+        'serialNumber': port.serialNumber ?? '',
+        'productId': port.productId?.toRadixString(16) ?? '',
+        'vendorId': port.vendorId?.toRadixString(16) ?? '',
       };
       port.dispose();
       return info;
     } catch (e) {
-      return {'name': portName, 'error': e.toString()};
+      return {'name': portName, 'description': '', 'error': e.toString()};
     }
   }
 
-  /// Carrega configuração do storage
+  // ========== CONFIGURAÇÃO ==========
+
   Future<void> loadConfig() async {
+    if (_configLoaded) return;
+
     try {
-      final configJson = await _storage.read(key: 'scale_config');
-      if (configJson != null) {
-        _config = ScaleConfig.fromJson(jsonDecode(configJson));
-        AppLogger.i(
-            '⚖️ Configuração da balança carregada: ${_config.serialPort}',);
-      } else {
-        // Tentar detectar porta automaticamente
-        await _autoDetectPort();
+      final json = await _storage.read(key: _scaleConfigKey);
+      if (json != null) {
+        _config = ScaleConfig.fromJson(jsonDecode(json));
+        AppLogger.i('⚖️ Config balança carregada: $_config');
       }
+      _configLoaded = true;
     } catch (e) {
-      AppLogger.w('⚖️ Erro ao carregar configuração da balança: $e');
-      // Em caso de erro, tentar detectar porta
-      await _autoDetectPort();
+      AppLogger.e('Erro ao carregar config da balança: $e');
+      _configLoaded = true;
     }
   }
 
-  /// Tenta detectar a porta da balança automaticamente
-  Future<void> _autoDetectPort() async {
-    final ports = getAvailablePorts();
-    AppLogger.d('⚖️ Portas disponíveis para auto-detecção: $ports');
-
-    if (ports.isEmpty) {
-      AppLogger.w('⚖️ Nenhuma porta série encontrada');
-      return;
-    }
-
-    // Procurar por portas USB-Serial comuns
-    for (final portName in ports) {
-      final info = getPortInfo(portName);
-      final description = (info['description'] ?? '').toLowerCase();
-      final manufacturer = (info['manufacturer'] ?? '').toLowerCase();
-
-      AppLogger.d('⚖️ Verificando porta: $portName');
-      AppLogger.d('⚖️   Descrição: ${info['description']}');
-      AppLogger.d('⚖️   Fabricante: ${info['manufacturer']}');
-
-      // Detectar adaptadores USB-Serial comuns
-      if (description.contains('usb') ||
-          description.contains('serial') ||
-          description.contains('ch340') ||
-          description.contains('pl2303') ||
-          description.contains('ftdi') ||
-          description.contains('cp210') ||
-          description.contains('modem') || // Para macOS usbmodem
-          manufacturer.contains('prolific') ||
-          manufacturer.contains('ftdi') ||
-          portName.contains('usbmodem') || // macOS: /dev/cu.usbmodem...
-          portName.contains('usbserial')) {
-        // macOS/Linux: /dev/cu.usbserial...
-        AppLogger.i('⚖️ Porta detectada automaticamente: $portName');
-        _config = _config.copyWith(serialPort: portName);
-        return;
-      }
-    }
-
-    // Se não encontrou adaptador USB-Serial, usar a primeira porta que não seja Bluetooth
-    for (final portName in ports) {
-      if (!portName.toLowerCase().contains('bluetooth') &&
-          !portName.toLowerCase().contains('debug') &&
-          !portName.toLowerCase().contains('wlan')) {
-        AppLogger.i('⚖️ A usar porta disponível: $portName');
-        _config = _config.copyWith(serialPort: portName);
-        return;
-      }
-    }
-
-    // Última opção: usar a primeira porta
-    if (ports.isNotEmpty) {
-      AppLogger.i('⚖️ A usar primeira porta disponível: ${ports.first}');
-      _config = _config.copyWith(serialPort: ports.first);
-    }
-  }
-
-  /// Guarda configuração no storage
   Future<void> saveConfig(ScaleConfig config) async {
+    // Desconectar se a porta mudou
+    if (_port != null && _config.serialPort != config.serialPort) {
+      await disconnect();
+    }
+
     _config = config;
+    _configLoaded = true;
+
     try {
       await _storage.write(
-        key: 'scale_config',
+        key: _scaleConfigKey,
         value: jsonEncode(config.toJson()),
       );
-      AppLogger.i('⚖️ Configuração da balança guardada: ${config.serialPort}');
+      AppLogger.i('✅ Config balança guardada: $config');
     } catch (e) {
-      AppLogger.e('⚖️ Erro ao guardar configuração da balança', error: e);
+      AppLogger.e('Erro ao guardar config: $e');
     }
   }
 
-  /// Abre a conexão com a porta série
-  bool _openSerialPort() {
-    if (_config.serialPort.isEmpty) {
-      AppLogger.e('⚖️ Porta série não configurada');
+  // ========== GESTÃO DE ESTADO ==========
+
+  void _setConnectionState(ScaleConnectionState state) {
+    if (_connectionState != state) {
+      _connectionState = state;
+      _connectionStateController.add(state);
+      AppLogger.i('⚖️ Estado da balança: ${state.name}');
+    }
+  }
+
+  // ========== CONEXÃO ==========
+
+  /// Inicializa o serviço e inicia a monitorização da porta
+  Future<void> initialize() async {
+    await loadConfig();
+    if (_config.isConfigured) {
+      _startPortMonitor();
+      await connect();
+    }
+  }
+
+  Future<bool> connect() async {
+    if (!_configLoaded) await loadConfig();
+
+    if (!_config.isConfigured) {
+      AppLogger.e('⚖️ Balança não configurada');
       return false;
     }
 
-    try {
-      // Fechar porta anterior se existir
-      _closeSerialPort();
+    // Se já está conectado, verificar se a porta ainda está válida
+    if (_port?.isOpen ?? false) {
+      if (_isPortStillValid()) {
+        return true;
+      }
+      // Porta inválida, limpar
+      await _cleanupPort();
+    }
 
-      AppLogger.d('⚖️ A abrir porta: ${_config.serialPort}');
-      _serialPort = SerialPort(_config.serialPort);
+    _setConnectionState(ScaleConnectionState.connecting);
+
+    try {
+      AppLogger.i('⚖️ A conectar: ${_config.serialPort}');
+      AppLogger.d(
+          '   Baud: ${_config.baudRate}, Protocol: ${_config.protocol.name}');
 
       // Verificar se a porta existe
-      if (!_serialPort!.isOpen) {
-        // Configurar porta ANTES de abrir
-        final portConfig = SerialPortConfig();
-        portConfig.baudRate = _config.baudRate;
-        portConfig.bits = _config.dataBits;
-        portConfig.stopBits = _config.stopBits;
-        portConfig.parity = _config.parity;
-        portConfig.setFlowControl(SerialPortFlowControl.none);
-
-        // Tentar aplicar configuração
-        try {
-          _serialPort!.config = portConfig;
-        } catch (e) {
-          AppLogger.w('⚖️ Aviso ao configurar porta (pode ser normal): $e');
-        }
-      }
-
-      // Abrir porta para leitura e escrita
-      if (!_serialPort!.openReadWrite()) {
-        final error = SerialPort.lastError;
-        AppLogger.e('⚖️ Erro ao abrir porta série: $error');
-        _serialPort?.dispose();
-        _serialPort = null;
+      final availablePorts = SerialPort.availablePorts;
+      if (!availablePorts.contains(_config.serialPort)) {
+        AppLogger.e('❌ Porta não encontrada: ${_config.serialPort}');
+        AppLogger.d('   Portas disponíveis: $availablePorts');
+        _setConnectionState(ScaleConnectionState.disconnected);
+        _scheduleReconnect();
         return false;
       }
 
-      // Aplicar configuração após abrir (algumas plataformas precisam disto)
-      try {
-        final portConfig = SerialPortConfig();
-        portConfig.baudRate = _config.baudRate;
-        portConfig.bits = _config.dataBits;
-        portConfig.stopBits = _config.stopBits;
-        portConfig.parity = _config.parity;
-        portConfig.setFlowControl(SerialPortFlowControl.none);
-        _serialPort!.config = portConfig;
-      } catch (e) {
-        AppLogger.w('⚖️ Aviso ao reconfigurar porta: $e');
+      _port = SerialPort(_config.serialPort);
+
+      if (!_port!.openReadWrite()) {
+        final error = SerialPort.lastError;
+        AppLogger.e('❌ Erro ao abrir porta: $error');
+        AppLogger.e('   Código: ${error?.errorCode}, Msg: ${error?.message}');
+        await _cleanupPort();
+        _scheduleReconnect();
+        return false;
       }
 
-      _isConnected = true;
-      AppLogger.i('⚖️ ✅ Porta série aberta: ${_config.serialPort}');
-      AppLogger.d('⚖️   Baud rate: ${_config.baudRate}');
-      AppLogger.d('⚖️   Data bits: ${_config.dataBits}');
-      AppLogger.d('⚖️   Stop bits: ${_config.stopBits}');
-      AppLogger.d('⚖️   Parity: ${_config.parity}');
+      AppLogger.d('✓ Porta aberta com sucesso');
+
+      final portConfig = SerialPortConfig();
+      portConfig.baudRate = _config.baudRate;
+      portConfig.bits = _config.dataBits;
+      portConfig.stopBits = _config.stopBits;
+      portConfig.parity = _config.parity;
+      portConfig.setFlowControl(SerialPortFlowControl.none);
+      _port!.config = portConfig;
+
+      // Verificar config aplicada
+      final appliedConfig = _port!.config;
+      AppLogger.d(
+          '✓ Config aplicada: baud=${appliedConfig.baudRate}, bits=${appliedConfig.bits}');
+
+      _setConnectionState(ScaleConnectionState.connected);
+      _reconnectAttempts = 0;
+      _cancelReconnect();
+      _startPortMonitor();
+
+      AppLogger.i('✅ Conectado: ${_config.serialPort}');
       return true;
-    } catch (e) {
-      AppLogger.e('⚖️ Erro ao abrir porta série', error: e);
-      _serialPort?.dispose();
-      _serialPort = null;
+    } catch (e, stack) {
+      AppLogger.e('❌ Erro ao conectar: $e');
+      AppLogger.e('   Stack: $stack');
+      await _cleanupPort();
+      _scheduleReconnect();
       return false;
     }
   }
 
-  /// Fecha a conexão com a porta série
-  void _closeSerialPort() {
+  /// Verifica se a porta configurada ainda está disponível no sistema
+  bool _isPortStillValid() {
     try {
-      if (_serialPort != null) {
-        if (_serialPort!.isOpen) {
-          _serialPort!.close();
-        }
-        _serialPort!.dispose();
-        _serialPort = null;
+      final availablePorts = SerialPort.availablePorts;
+      if (!availablePorts.contains(_config.serialPort)) {
+        AppLogger.w('⚖️ Porta ${_config.serialPort} já não está disponível');
+        return false;
       }
-      _isConnected = false;
+
+      // Verificar se a porta ainda está aberta
+      if (_port == null || !_port!.isOpen) {
+        AppLogger.w('⚖️ Porta não está aberta');
+        return false;
+      }
+
+      return true;
     } catch (e) {
-      AppLogger.e('⚖️ Erro ao fechar porta série', error: e);
+      AppLogger.e('⚖️ Erro ao verificar porta: $e');
+      return false;
     }
   }
 
-  /// Lê o peso actual da balança
-  Future<ScaleReading?> readWeight() async {
-    switch (_config.connectionType) {
-      case ScaleConnectionType.serial:
-        return _readWeightSerial();
-      case ScaleConnectionType.tcp:
-        return _readWeightTcp();
-      case ScaleConnectionType.http:
-        return _readWeightHttp();
+  /// Limpa a porta atual
+  Future<void> _cleanupPort() async {
+    try {
+      if (_port != null) {
+        if (_port!.isOpen) {
+          _port!.close();
+        }
+        _port!.dispose();
+        _port = null;
+      }
+    } catch (e) {
+      AppLogger.e('Erro ao limpar porta: $e');
+      _port = null;
+    }
+    _setConnectionState(ScaleConnectionState.disconnected);
+  }
+
+  // ========== RECONEXÃO AUTOMÁTICA ==========
+
+  /// Inicia a monitorização periódica da porta
+  void _startPortMonitor() {
+    _portMonitorTimer?.cancel();
+    _portMonitorTimer = Timer.periodic(_portMonitorInterval, (_) {
+      _checkPortHealth();
+    });
+  }
+
+  /// Para a monitorização da porta
+  void _stopPortMonitor() {
+    _portMonitorTimer?.cancel();
+    _portMonitorTimer = null;
+  }
+
+  /// Verifica a saúde da conexão
+  void _checkPortHealth() {
+    if (!_config.isConfigured) return;
+
+    // Se está em processo de reconexão, não fazer nada
+    if (_connectionState == ScaleConnectionState.reconnecting ||
+        _connectionState == ScaleConnectionState.connecting) {
+      return;
+    }
+
+    // Verificar se a porta ainda existe e está válida
+    if (!_isPortStillValid()) {
+      AppLogger.w('⚖️ Monitor: porta desconectada, a iniciar reconexão...');
+      _handleDisconnection();
     }
   }
 
-  /// Lê peso via porta série (RS-232)
-  Future<ScaleReading?> _readWeightSerial() async {
-    if (_config.serialPort.isEmpty) {
-      // Tentar detectar porta
-      await _autoDetectPort();
-      if (_config.serialPort.isEmpty) {
-        AppLogger.e('⚖️ Nenhuma porta série configurada ou detectada');
+  /// Trata uma desconexão detectada
+  void _handleDisconnection() {
+    if (_connectionState == ScaleConnectionState.reconnecting) return;
+
+    _cleanupPort();
+    _scheduleReconnect();
+  }
+
+  /// Agenda uma tentativa de reconexão
+  void _scheduleReconnect() {
+    if (_reconnectTimer?.isActive ?? false) return;
+
+    _setConnectionState(ScaleConnectionState.reconnecting);
+
+    _reconnectTimer = Timer.periodic(_reconnectInterval, (_) async {
+      _reconnectAttempts++;
+
+      // Verificar limite de tentativas (0 = infinito)
+      if (_maxReconnectAttempts > 0 &&
+          _reconnectAttempts > _maxReconnectAttempts) {
+        AppLogger.e(
+            '⚖️ Limite de tentativas de reconexão atingido ($_maxReconnectAttempts)');
+        _cancelReconnect();
+        _setConnectionState(ScaleConnectionState.disconnected);
+        return;
+      }
+
+      AppLogger.i(
+          '⚖️ Tentativa de reconexão #$_reconnectAttempts...');
+
+      // Verificar se a porta apareceu
+      final availablePorts = SerialPort.availablePorts;
+      if (availablePorts.contains(_config.serialPort)) {
+        AppLogger.i('⚖️ Porta ${_config.serialPort} encontrada!');
+        _cancelReconnect();
+
+        // Pequeno delay para dar tempo ao sistema
+        await Future.delayed(const Duration(milliseconds: 500));
+
+        if (await connect()) {
+          AppLogger.i('✅ Reconexão bem sucedida!');
+        }
+      } else {
+        AppLogger.d(
+            '⚖️ Porta ${_config.serialPort} ainda não disponível. Portas: $availablePorts');
+      }
+    });
+  }
+
+  /// Cancela o timer de reconexão
+  void _cancelReconnect() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+  }
+
+  Future<void> disconnect() async {
+    _cancelReconnect();
+    _stopPortMonitor();
+    await _cleanupPort();
+  }
+
+  // ========== LEITURA ==========
+
+  Future<WeightReading?> readWeight() async {
+    if (!_configLoaded) await loadConfig();
+    if (!_config.isConfigured) {
+      AppLogger.w('⚖️ readWeight: Balança não configurada');
+      return null;
+    }
+
+    // Verificar conexão e tentar reconectar se necessário
+    if (!isConnected) {
+      AppLogger.d('⚖️ readWeight: Não conectado, a tentar conectar...');
+      if (!await connect()) {
+        AppLogger.e('⚖️ readWeight: Falha ao conectar');
         return null;
       }
     }
 
+    // Verificar novamente se a porta está válida
+    if (!_isPortStillValid()) {
+      AppLogger.e('⚖️ readWeight: Porta inválida');
+      _handleDisconnection();
+      return null;
+    }
+
     try {
-      // Abrir porta se necessário
-      if (!_isConnected || _serialPort == null || !_serialPort!.isOpen) {
-        if (!_openSerialPort()) {
-          return null;
-        }
+      // Limpar buffer
+      int cleared = 0;
+      while (_port!.bytesAvailable > 0) {
+        cleared += _port!.read(_port!.bytesAvailable).length;
+      }
+      if (cleared > 0) {
+        AppLogger.d('⚖️ Buffer limpo: $cleared bytes');
       }
 
-      AppLogger.d('⚖️ A ler peso da balança via RS-232...');
+      // Enviar comando
+      final command = _getWeightCommand();
+      AppLogger.d(
+          '📤 A enviar comando: ${_bytesToHex(command)} (${command.length} bytes)');
 
-      // Limpar buffer de entrada
-      try {
-        _serialPort!.flush();
-        // TESTE: Enviar MÚLTIPLOS comandos
-        _serialPort!.write(Uint8List.fromList([0x05])); // ENQ
-        await Future.delayed(const Duration(milliseconds: 100));
-        _serialPort!.write(Uint8List.fromList([0x14])); // DC4
-        await Future.delayed(const Duration(milliseconds: 100));
-        _serialPort!.write(Uint8List.fromList('P'.codeUnits)); // 'P'
-        AppLogger.d('⚖️ Múltiplos comandos enviados');
-      } catch (e) {
-        AppLogger.w('⚖️ Aviso ao limpar buffer: $e');
+      final written = _port!.write(Uint8List.fromList(command));
+      AppLogger.d('📤 Bytes escritos: $written');
+
+      if (written != command.length) {
+        AppLogger.e('❌ Erro: escritos $written de ${command.length} bytes');
+        _handleDisconnection();
+        return null;
       }
 
-      // Enviar comando de solicitação de peso (se necessário para o protocolo)
-      if (_config.protocol == ScaleProtocol.dibal) {
-        // Dibal G-325: Enviar comando para solicitar peso
-        // Protocolo Dibal: ENQ (0x05) solicita peso
-        // Alternativa: DC4 (0x14) ou 'P' (0x50)
-        try {
-          // _serialPort!.write(Uint8List.fromList([0x05])); // ENQ
-          // AppLogger.d('⚖️ Comando ENQ (0x05) enviado');
-
-          // _serialPort!.write(Uint8List.fromList([0x14]));
-          // AppLogger.d('⚖️ Comando DC4 (0x14) enviado');
-
-          // _serialPort!.write(Uint8List.fromList([0x50])); // 'P'
-          // AppLogger.d('⚖️ Comando "P" (0x50) enviado');
-
-          // _serialPort!.write(Uint8List.fromList('P'.codeUnits));
-          // AppLogger.d('⚖️ Comando "P" enviado');
-
-          _serialPort!.write(Uint8List.fromList([0x1B]));
-          AppLogger.d('⚖️ Comando ESC (0x1B) enviado');
-        } catch (e) {
-          AppLogger.w('⚖️ Aviso ao enviar comando: $e');
-        }
-      } else if (_config.requestCommand != null) {
-        _serialPort!
-            .write(Uint8List.fromList(_config.requestCommand!.codeUnits));
-      }
-
-      // Aguardar resposta
-      await Future.delayed(const Duration(milliseconds: 500));
+      // Pequeno delay para dar tempo à balança responder
+      await Future.delayed(const Duration(milliseconds: 50));
 
       // Ler resposta
-      final buffer = StringBuffer();
-      final rawBytes = <int>[];
-      final startTime = DateTime.now();
+      AppLogger.d('📥 A aguardar resposta (500ms timeout)...');
+      final response = await _readWithTimeout(const Duration(milliseconds: 500));
 
-      while (DateTime.now().difference(startTime) < _config.timeout) {
-        final available = _serialPort!.bytesAvailable;
-        if (available > 0) {
-          final data = _serialPort!.read(available);
-          if (data.isNotEmpty) {
-            rawBytes.addAll(data);
-            buffer.write(String.fromCharCodes(data));
-
-            // Verificar se temos uma linha completa
-            final content = buffer.toString();
-            if (content.contains('\r') ||
-                content.contains('\n') ||
-                content.length >= 15) {
-              final hexStr = rawBytes
-                  .map((b) => b.toRadixString(16).padLeft(2, '0'))
-                  .join(' ');
-              AppLogger.d('⚖️ Dados recebidos: "$content"');
-              AppLogger.d('⚖️ Dados hex: $hexStr');
-
-              final reading = _parseResponse(content);
-              if (reading != null) {
-                return reading;
-              }
-            }
-          }
-        }
-        await Future.delayed(const Duration(milliseconds: 50));
+      if (response == null || response.isEmpty) {
+        AppLogger.w('📥 Sem resposta da balança');
+        return null;
       }
 
-      // Timeout - tentar fazer parse do que temos
-      if (buffer.isNotEmpty) {
-        final hexStr =
-            rawBytes.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
-        AppLogger.d('⚖️ Timeout, dados recebidos: "${buffer.toString()}"');
-        AppLogger.d('⚖️ Dados hex: $hexStr');
-        return _parseResponse(buffer.toString());
+      AppLogger.i('📥 Recebido ${response.length} bytes: ${_bytesToHex(response)}');
+      final ascii =
+          String.fromCharCodes(response.where((b) => b >= 32 && b < 127));
+      AppLogger.d('   ASCII: "$ascii"');
+
+      // Se receber "?" significa que o comando não é reconhecido
+      // Tentar auto-detecção
+      if (response.contains(0x3F)) {
+        AppLogger.w('⚠️ Comando não reconhecido ("?"), a tentar auto-detecção...');
+        return await readWeightWithAutoDetect();
       }
 
-      AppLogger.w('⚖️ Timeout ao ler balança - nenhum dado recebido');
-      return null;
-    } catch (e) {
-      AppLogger.e('⚖️ Erro ao ler balança RS-232', error: e);
-      _closeSerialPort();
+      final result = _parseWeight(response);
+      if (result != null) {
+        AppLogger.i(
+            '✅ Peso: ${result.weight} ${result.unit} (estável: ${result.isStable})');
+      } else {
+        AppLogger.w('⚠️ Não foi possível fazer parse da resposta');
+      }
+
+      return result;
+    } catch (e, stack) {
+      AppLogger.e('❌ Erro ao ler peso: $e');
+      AppLogger.e('   Stack: $stack');
+
+      // Verificar se foi erro de comunicação
+      if (e.toString().contains('port') ||
+          e.toString().contains('serial') ||
+          e.toString().contains('I/O')) {
+        _handleDisconnection();
+      }
+
       return null;
     }
   }
 
-  /// Lê peso via TCP
-  Future<ScaleReading?> _readWeightTcp() async {
-    Socket? socket;
+  Future<WeightResult> readWeightResult() async {
+    final reading = await readWeight();
+    if (reading != null) {
+      return WeightResult.ok(reading.weight, stable: reading.isStable);
+    }
+    return WeightResult.fail('Não foi possível ler o peso');
+  }
 
-    try {
-      AppLogger.d(
-          '⚖️ A conectar à balança TCP: ${_config.host}:${_config.port}',);
+  // ========== PROTOCOLO ==========
 
-      socket = await Socket.connect(
-        _config.host,
-        _config.port,
-        timeout: _config.timeout,
-      );
-
-      if (_config.requestCommand != null) {
-        socket.write(_config.requestCommand);
-      }
-
-      final completer = Completer<String>();
-      final buffer = StringBuffer();
-
-      final subscription = socket.listen(
-        (Uint8List data) {
-          final str = String.fromCharCodes(data);
-          buffer.write(str);
-
-          if (str.contains('\n') || str.contains('\r')) {
-            if (!completer.isCompleted) {
-              completer.complete(buffer.toString());
-            }
-          }
-        },
-        onError: (error) {
-          if (!completer.isCompleted) {
-            completer.completeError(error);
-          }
-        },
-        onDone: () {
-          if (!completer.isCompleted) {
-            completer.complete(buffer.toString());
-          }
-        },
-      );
-
-      final response = await completer.future.timeout(
-        _config.timeout,
-        onTimeout: () {
-          subscription.cancel();
-          throw TimeoutException('Timeout ao ler balança');
-        },
-      );
-
-      subscription.cancel();
-
-      AppLogger.d('⚖️ Resposta TCP: $response');
-
-      return _parseResponse(response);
-    } catch (e) {
-      AppLogger.e('⚖️ Erro ao ler balança TCP', error: e);
-      return null;
-    } finally {
-      socket?.destroy();
+  List<int> _getWeightCommand() {
+    switch (_config.protocol) {
+      case ScaleProtocol.dibal:
+        // Dibal G325 com protocolo 16 (DIALOG 06):
+        // O protocolo DIALOG requer que a caixa (POS) envie primeiro o preço
+        // e a balança responde com peso quando recebe o pedido.
+        // Para polling simples, muitas Dibal usam ENQ (0x05)
+        // ou o formato STX + "01" + ETX para pedir peso
+        return [0x05]; // ENQ - mais universal para Dibal
+      case ScaleProtocol.toledo:
+      case ScaleProtocol.mettlerToledo:
+        return [0x53]; // 'S'
+      case ScaleProtocol.cas:
+        return [0x05]; // ENQ
+      case ScaleProtocol.epelsa:
+        return [0x11]; // DC1
+      case ScaleProtocol.generic:
+        return [0x05]; // ENQ
     }
   }
 
-  /// Lê peso via HTTP
-  Future<ScaleReading?> _readWeightHttp() async {
-    try {
-      final client = HttpClient();
-      client.connectionTimeout = _config.timeout;
+  /// Tenta ler peso com múltiplos protocolos/comandos (para auto-detecção)
+  Future<WeightReading?> readWeightWithAutoDetect() async {
+    if (!_configLoaded) await loadConfig();
+    if (!_config.isConfigured) return null;
+    if (!isConnected && !await connect()) return null;
 
-      final request = await client
-          .getUrl(Uri.parse('http://${_config.host}:${_config.port}'));
-      final response = await request.close();
+    // Lista de comandos a tentar, incluindo frames estruturados
+    // Formato: (bytes, descrição)
+    final commands = [
+      // Comandos simples
+      ([0x05], 'ENQ'), // ENQ - polling genérico
+      ([0x57], 'W'), // 'W' - pedido de peso ASCII
+      ([0x11], 'DC1'), // DC1 - protocolo 16
+      ([0x53], 'S'), // 'S' - Mettler-Toledo
 
-      final responseBody = await response.transform(utf8.decoder).join();
+      // Frames estruturados STX/ETX (DIALOG 06 style)
+      // Frame 1: STX + "01" + ESC + "000000" + ETX (preço zero para pedir peso)
+      (
+        [0x02, 0x30, 0x31, 0x1B, 0x30, 0x30, 0x30, 0x30, 0x30, 0x30, 0x03],
+        'DIALOG-01'
+      ),
 
-      AppLogger.d('⚖️ Resposta HTTP: $responseBody');
+      // Frame ANKER: STX + preço + ETX
+      ([0x02, 0x30, 0x30, 0x30, 0x30, 0x30, 0x03], 'ANKER'),
 
-      client.close();
+      // Frame NCI: 'W' seguido de CR
+      ([0x57, 0x0D], 'NCI-W'),
 
-      return _parseResponse(responseBody);
-    } catch (e) {
-      AppLogger.e('⚖️ Erro ao ler balança HTTP', error: e);
-      return null;
-    }
-  }
+      // Frame CASIO: '@1' + preço + CR
+      ([0x40, 0x31, 0x30, 0x30, 0x30, 0x30, 0x30, 0x0D], 'CASIO'),
 
-  /// Faz parse da resposta da balança
-  ScaleReading? _parseResponse(String response) {
-    if (response.isEmpty) {
-      AppLogger.w('⚖️ Resposta vazia da balança');
-      return null;
-    }
+      // Comandos adicionais
+      ([0x12], 'DC2'), // DC2
+      ([0x06], 'ACK'), // ACK (alguns modelos respondem com peso)
+    ];
 
-    try {
-      final cleaned = response.trim();
-
-      // Regex personalizado primeiro
-      if (_config.weightRegex != null) {
-        final regex = RegExp(_config.weightRegex!);
-        final match = regex.firstMatch(cleaned);
-        if (match != null) {
-          final weightStr = match.group(1) ?? match.group(0);
-          final weight = double.tryParse(weightStr?.replaceAll(',', '.') ?? '');
-          if (weight != null) {
-            return ScaleReading(
-              weight: weight,
-              unit: 'kg',
-              isStable: true,
-              rawData: cleaned,
-            );
-          }
-        }
-      }
-
-      // Parse baseado no protocolo
-      switch (_config.protocol) {
-        case ScaleProtocol.dibal:
-          return _parseDialResponse(cleaned);
-        case ScaleProtocol.toledo:
-          return _parseToledoResponse(cleaned);
-        case ScaleProtocol.mettlerToledo:
-          return _parseMettlerToledoResponse(cleaned);
-        case ScaleProtocol.cas:
-          return _parseCasResponse(cleaned);
-        case ScaleProtocol.epelsa:
-        case ScaleProtocol.generic:
-          return _parseGenericResponse(cleaned);
-      }
-    } catch (e) {
-      AppLogger.e('⚖️ Erro ao fazer parse da resposta', error: e);
-      return null;
-    }
-  }
-
-  /// Parse para balanças Dibal (G-310, G-325, etc.)
-  /// Formato típico Dibal: STX + dados + ETX ou formato ASCII
-  /// Exemplos:
-  /// - "  1.234" (peso em kg, espaços à esquerda)
-  /// - "\x02001234\x03" (STX + peso em gramas + ETX)
-  ScaleReading? _parseDialResponse(String response) {
-    AppLogger.d('⚖️ A fazer parse Dibal: "$response"');
-
-    // Remover caracteres de controlo (STX, ETX, etc.)
-    var cleaned = response
-        .replaceAll('\x02', '') // STX
-        .replaceAll('\x03', '') // ETX
-        .replaceAll('\x06', '') // ACK
-        .replaceAll('\x15', '') // NAK
-        .replaceAll('\r', '')
-        .replaceAll('\n', '')
-        .trim();
-
-    AppLogger.d('⚖️ Após limpeza: "$cleaned"');
-
-    // Verificar estabilidade (algumas Dibal enviam flag)
-    final isStable = !response.contains('?') && !response.contains('M');
-
-    // Tentar extrair peso
-    // Formato 1: Peso em kg com decimais (ex: "  1.234" ou "1,234")
-    var regex = RegExp(r'(\d+[.,]\d+)');
-    var match = regex.firstMatch(cleaned);
-
-    if (match != null) {
-      final weightStr = match.group(1)!.replaceAll(',', '.');
-      final weight = double.tryParse(weightStr);
-      if (weight != null) {
-        AppLogger.i('⚖️ ✅ Peso extraído (formato decimal): $weight kg');
-        return ScaleReading(
-          weight: weight,
-          unit: 'kg',
-          isStable: isStable,
-          rawData: response,
-        );
-      }
-    }
-
-    // Formato 2: Peso em gramas sem decimal (ex: "001234" = 1.234 kg)
-    regex = RegExp(r'(\d{5,6})');
-    match = regex.firstMatch(cleaned);
-
-    if (match != null) {
-      final weightInt = int.tryParse(match.group(1)!);
-      if (weightInt != null) {
-        // Converter de gramas para kg (assumindo 3 casas decimais)
-        final weight = weightInt / 1000.0;
-        AppLogger.i('⚖️ ✅ Peso extraído (formato inteiro): $weight kg');
-        return ScaleReading(
-          weight: weight,
-          unit: 'kg',
-          isStable: isStable,
-          rawData: response,
-        );
-      }
-    }
-
-    // Formato 3: Qualquer número
-    return _parseGenericResponse(cleaned);
-  }
-
-  /// Parse genérico
-  ScaleReading? _parseGenericResponse(String response) {
-    final isStable = !response.contains('?') &&
-        (response.contains('S') || !response.contains('M'));
-
-    final regex = RegExp(r'[+-]?\d+[.,]?\d*');
-    final match = regex.firstMatch(response);
-
-    if (match != null) {
-      var weightStr = match.group(0)!.replaceAll(',', '.');
-      var weight = double.tryParse(weightStr);
-
-      if (weight != null) {
-        String unit = 'kg';
-        if (response.toLowerCase().contains('g') &&
-            !response.toLowerCase().contains('kg')) {
-          weight = weight / 1000;
-        } else if (response.toLowerCase().contains('lb')) {
-          weight = weight * 0.453592;
+    for (final cmd in commands) {
+      try {
+        // Limpar buffer
+        while (_port!.bytesAvailable > 0) {
+          _port!.read(_port!.bytesAvailable);
         }
 
-        if (weight > 100 && !weightStr.contains('.')) {
-          weight = weight / 1000;
-        }
+        AppLogger.d('⚖️ Tentando comando ${cmd.$2} (${_bytesToHex(cmd.$1)})');
+        _port!.write(Uint8List.fromList(cmd.$1));
 
-        AppLogger.i('⚖️ ✅ Peso extraído (genérico): $weight kg');
-        return ScaleReading(
-          weight: weight,
-          unit: unit,
-          isStable: isStable,
-          rawData: response,
-        );
+        await Future.delayed(const Duration(milliseconds: 100));
+        final response =
+            await _readWithTimeout(const Duration(milliseconds: 400));
+
+        if (response != null && response.isNotEmpty) {
+          AppLogger.d('   Resposta: ${_bytesToHex(response)}');
+
+          // Verificar se é "?" (comando não reconhecido)
+          if (response.contains(0x3F)) {
+            AppLogger.d('   → "?" - comando não reconhecido');
+            continue;
+          }
+
+          // Verificar se é NAK
+          if (response.contains(0x15)) {
+            AppLogger.d('   → NAK - rejeitado');
+            continue;
+          }
+
+          // Tentar fazer parse
+          final result = _parseWeight(response);
+          if (result != null) {
+            AppLogger.i('✅ Comando ${cmd.$2} funcionou! Peso: ${result.weight}');
+            return result;
+          } else {
+            AppLogger.d('   → Não foi possível fazer parse');
+          }
+        } else {
+          AppLogger.d('   → Sem resposta');
+        }
+      } catch (e) {
+        AppLogger.d('   → Erro: $e');
       }
     }
 
-    AppLogger.w('⚖️ Não foi possível extrair peso: "$response"');
+    AppLogger.w('⚠️ Nenhum comando funcionou. Verifique:');
+    AppLogger.w('   1. Protocolo configurado na balança (sidepr=16)');
+    AppLogger.w('   2. Parâmetros série: 9600-8-N-1');
+    AppLogger.w('   3. Cabo RS-232 correctamente ligado');
     return null;
   }
 
-  /// Parse para balanças Toledo
-  ScaleReading? _parseToledoResponse(String response) {
-    final isStable = response.startsWith('ST');
+  Future<Uint8List?> _readWithTimeout(Duration timeout) async {
+    final completer = Completer<Uint8List?>();
+    final buffer = <int>[];
+    Timer? timeoutTimer;
+    Timer? readTimer;
 
-    final regex = RegExp(r'[+-]?(\d+\.?\d*)');
-    final match = regex.firstMatch(response);
+    timeoutTimer = Timer(timeout, () {
+      readTimer?.cancel();
+      if (!completer.isCompleted) {
+        completer.complete(buffer.isEmpty ? null : Uint8List.fromList(buffer));
+      }
+    });
 
+    readTimer = Timer.periodic(const Duration(milliseconds: 10), (_) {
+      try {
+        if (_port == null || !_port!.isOpen) {
+          timeoutTimer?.cancel();
+          readTimer?.cancel();
+          if (!completer.isCompleted) completer.complete(null);
+          return;
+        }
+
+        final available = _port!.bytesAvailable;
+        if (available > 0) {
+          buffer.addAll(_port!.read(available));
+
+          // Frame completo?
+          if (buffer.contains(0x0D) ||
+              buffer.contains(0x0A) ||
+              buffer.contains(0x03)) {
+            timeoutTimer?.cancel();
+            readTimer?.cancel();
+            if (!completer.isCompleted) {
+              completer.complete(Uint8List.fromList(buffer));
+            }
+          }
+        }
+      } catch (_) {}
+    });
+
+    return completer.future;
+  }
+
+  /// Tenta ler peso em modo passivo (para balanças com transmissão contínua)
+  /// Algumas balanças enviam peso automaticamente quando há alteração
+  Future<WeightReading?> readWeightPassive(
+      {Duration timeout = const Duration(seconds: 2)}) async {
+    if (!_configLoaded) await loadConfig();
+    if (!_config.isConfigured) return null;
+    if (!isConnected && !await connect()) return null;
+
+    try {
+      AppLogger.d('⚖️ Modo passivo: aguardando dados da balança...');
+
+      // Limpar buffer primeiro
+      while (_port!.bytesAvailable > 0) {
+        _port!.read(_port!.bytesAvailable);
+      }
+
+      // Aguardar dados sem enviar comando
+      final response = await _readWithTimeout(timeout);
+
+      if (response != null && response.isNotEmpty) {
+        AppLogger.i('📥 Dados recebidos: ${_bytesToHex(response)}');
+        return _parseWeight(response);
+      }
+
+      AppLogger.d('   Nenhum dado recebido no modo passivo');
+      return null;
+    } catch (e) {
+      AppLogger.e('Erro modo passivo: $e');
+      return null;
+    }
+  }
+
+  /// Método de diagnóstico - testa todos os modos de comunicação
+  Future<Map<String, dynamic>> runDiagnostics() async {
+    final results = <String, dynamic>{
+      'timestamp': DateTime.now().toIso8601String(),
+      'config': _config.toString(),
+      'connectionState': _connectionState.name,
+    };
+
+    // Tentar conectar
+    if (!isConnected) {
+      results['connect'] = await connect();
+    } else {
+      results['connect'] = true;
+    }
+
+    if (!isConnected) {
+      results['error'] = 'Não foi possível conectar';
+      return results;
+    }
+
+    // Teste 1: Modo passivo (balança pode enviar dados automaticamente)
+    AppLogger.i('🔍 Teste 1: Modo passivo');
+    final passiveResult =
+        await readWeightPassive(timeout: const Duration(seconds: 1));
+    results['passive_mode'] = passiveResult != null
+        ? 'OK - Peso: ${passiveResult.weight}'
+        : 'Sem resposta';
+
+    // Teste 2: Comando principal
+    AppLogger.i('🔍 Teste 2: Comando principal');
+    final mainResult = await readWeight();
+    results['main_command'] =
+        mainResult != null ? 'OK - Peso: ${mainResult.weight}' : 'Falhou';
+
+    // Teste 3: Info da porta
+    results['port_info'] = {
+      'name': _config.serialPort,
+      'open': _port?.isOpen ?? false,
+      'available_ports': SerialPort.availablePorts,
+    };
+
+    AppLogger.i('📊 Diagnóstico completo: $results');
+    return results;
+  }
+
+  // ========== PARSING ==========
+
+  WeightReading? _parseWeight(Uint8List data) {
+    if (data.contains(0x15)) return null; // NAK
+
+    final cleanStr = String.fromCharCodes(data)
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), ' ')
+        .trim();
+
+    switch (_config.protocol) {
+      case ScaleProtocol.dibal:
+        return _parseDialWeight(cleanStr, data);
+      case ScaleProtocol.toledo:
+      case ScaleProtocol.mettlerToledo:
+        return _parseMettlerWeight(cleanStr, data);
+      case ScaleProtocol.cas:
+        return _parseCasWeight(cleanStr, data);
+      default:
+        return _parseGenericWeight(cleanStr, data);
+    }
+  }
+
+  WeightReading? _parseDialWeight(String cleanStr, Uint8List data) {
+    // DIALOG 06 response format: STX + status + 5 digits weight + ETX ou similar
+    // Exemplo: 0x02 0x30 0x30 W W W W W 0x03
+    // Também pode ter formato: peso + unidade
+
+    AppLogger.d('   Parse Dibal: "$cleanStr" | raw: ${_bytesToHex(data)}');
+
+    // Verificar se há STX/ETX (protocolo DIALOG)
+    if (data.contains(0x02) && data.contains(0x03)) {
+      final startIdx = data.indexOf(0x02) + 1;
+      final endIdx = data.indexOf(0x03);
+      if (endIdx > startIdx) {
+        final payload = data.sublist(startIdx, endIdx);
+        final payloadStr =
+            String.fromCharCodes(payload).replaceAll(RegExp(r'[^\d\.]'), '');
+        AppLogger.d('   Payload DIALOG: $payloadStr');
+
+        // Extrair peso (normalmente últimos 5-6 dígitos)
+        if (payloadStr.length >= 5) {
+          var numStr = payloadStr;
+          // Inserir ponto decimal se não existir
+          if (!numStr.contains('.')) {
+            final len = numStr.length;
+            numStr =
+                '${numStr.substring(0, len - 3)}.${numStr.substring(len - 3)}';
+          }
+          final weight = double.tryParse(numStr);
+          if (weight != null && weight >= 0) {
+            final isStable = !data.contains(0x55) && !cleanStr.contains('U');
+            return WeightReading(weight: weight, isStable: isStable);
+          }
+        }
+      }
+    }
+
+    // Formato simples: extrair números
+    final match = RegExp(r'[\d\s\.]+').firstMatch(cleanStr);
     if (match != null) {
-      final weight = double.tryParse(match.group(1) ?? '');
-      if (weight != null) {
-        return ScaleReading(
-          weight: weight,
-          unit: 'kg',
-          isStable: isStable,
-          rawData: response,
-        );
+      var numStr = match.group(0)!.replaceAll(' ', '');
+      if (!numStr.contains('.') && numStr.length >= 5) {
+        final len = numStr.length;
+        numStr =
+            '${numStr.substring(0, len - 3)}.${numStr.substring(len - 3)}';
+      }
+      final weight = double.tryParse(numStr);
+      if (weight != null && weight >= 0) {
+        return WeightReading(weight: weight, isStable: !data.contains(0x55));
       }
     }
-
-    return _parseGenericResponse(response);
+    return null;
   }
 
-  /// Parse para balanças Mettler-Toledo
-  ScaleReading? _parseMettlerToledoResponse(String response) {
-    final parts = response.split(RegExp(r'\s+'));
-    final isStable = parts.isNotEmpty && parts[0] == 'S';
-
-    for (final part in parts) {
-      final weight = double.tryParse(part.replaceAll(',', '.'));
-      if (weight != null && weight > 0) {
-        return ScaleReading(
-          weight: weight,
-          unit: 'kg',
-          isStable: isStable,
-          rawData: response,
-        );
+  WeightReading? _parseMettlerWeight(String cleanStr, Uint8List data) {
+    final isStable = cleanStr.contains('S S') || !cleanStr.contains('S D');
+    final match = RegExp(r'[\d]+\.[\d]+').firstMatch(cleanStr);
+    if (match != null) {
+      final weight = double.tryParse(match.group(0)!);
+      if (weight != null && weight >= 0) {
+        return WeightReading(weight: weight, isStable: isStable);
       }
     }
-
-    return _parseGenericResponse(response);
+    return null;
   }
 
-  /// Parse para balanças CAS
-  ScaleReading? _parseCasResponse(String response) {
-    final parts = response.split(',');
-    final isStable = parts.isNotEmpty && parts[0].contains('ST');
-
-    for (final part in parts) {
-      final cleaned = part.replaceAll(RegExp(r'[^0-9.,+-]'), '');
-      final weight = double.tryParse(cleaned.replaceAll(',', '.'));
-      if (weight != null && weight > 0) {
-        return ScaleReading(
-          weight: weight,
-          unit: 'kg',
-          isStable: isStable,
-          rawData: response,
-        );
+  WeightReading? _parseCasWeight(String cleanStr, Uint8List data) {
+    final isStable = cleanStr.contains('ST');
+    final match = RegExp(r'[+-]?[\d]+\.[\d]+').firstMatch(cleanStr);
+    if (match != null) {
+      final weight = double.tryParse(match.group(0)!.replaceAll('+', ''));
+      if (weight != null && weight >= 0) {
+        return WeightReading(weight: weight, isStable: isStable);
       }
     }
-
-    return _parseGenericResponse(response);
+    return null;
   }
 
-  /// Testa a conexão com a balança
-  Future<bool> testConnection() async {
-    final reading = await readWeight();
-    return reading != null;
+  WeightReading? _parseGenericWeight(String cleanStr, Uint8List data) {
+    final match = RegExp(r'[\d]+\.?[\d]*').firstMatch(cleanStr);
+    if (match != null) {
+      var numStr = match.group(0)!;
+      if (!numStr.contains('.') && numStr.length >= 5) {
+        final len = numStr.length;
+        numStr =
+            '${numStr.substring(0, len - 3)}.${numStr.substring(len - 3)}';
+      }
+      final weight = double.tryParse(numStr);
+      if (weight != null && weight >= 0) {
+        return WeightReading(weight: weight, isStable: true);
+      }
+    }
+    return null;
   }
 
-  /// Fecha conexões
+  String _bytesToHex(List<int> bytes) => bytes
+      .map((b) => b.toRadixString(16).padLeft(2, '0').toUpperCase())
+      .join(' ');
+
   void dispose() {
-    _closeSerialPort();
+    _connectionStateController.close();
+    disconnect();
   }
 }

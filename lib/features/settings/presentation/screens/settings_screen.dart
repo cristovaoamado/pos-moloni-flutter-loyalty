@@ -1149,6 +1149,11 @@ class _PrinterSettingsCardState extends ConsumerState<_PrinterSettingsCard> {
 }
 
 /// Card de configurações da balança
+// ============================================================
+// SUBSTITUIR a classe _ScaleSettingsCard no settings_screen.dart
+// ============================================================
+
+/// Card de configurações da balança
 class _ScaleSettingsCard extends StatefulWidget {
   const _ScaleSettingsCard();
 
@@ -1157,7 +1162,8 @@ class _ScaleSettingsCard extends StatefulWidget {
 }
 
 class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
-  final _scaleService = ScaleService();
+  // IMPORTANTE: Usar sempre o singleton!
+  final _scaleService = ScaleService.instance;
 
   bool _isLoading = true;
   bool _isTesting = false;
@@ -1177,7 +1183,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
 
   @override
   void dispose() {
-    _scaleService.dispose();
+    // NÃO fazer dispose do singleton aqui!
     super.dispose();
   }
 
@@ -1215,7 +1221,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
       baudRate: _baudRate,
       dataBits: 8,
       stopBits: 1,
-      parity: 0, // None
+      parity: 0,
     );
 
     await _scaleService.saveConfig(config);
@@ -1246,11 +1252,11 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
     });
 
     try {
-      // Guardar config temporariamente para teste
+      // IMPORTANTE: Guardar a config ANTES de testar!
       final config = ScaleConfig(
         connectionType: ScaleConnectionType.serial,
         protocol: _protocol,
-        serialPort: _selectedPort!,
+        serialPort: _selectedPort!,  // Incluir a porta!
         baudRate: _baudRate,
         dataBits: 8,
         stopBits: 1,
@@ -1259,17 +1265,21 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
 
       await _scaleService.saveConfig(config);
 
+      // Agora ler o peso
       final reading = await _scaleService.readWeight();
 
       if (reading != null) {
         setState(() {
           _testResult =
-              'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}';
+              'Peso lido: ${reading.weight.toStringAsFixed(3)} ${reading.unit}${reading.isStable ? '' : ' (instável)'}';
           _testSuccess = true;
         });
       } else {
         setState(() {
-          _testResult = 'Sem resposta da balança. Verifique a conexão.';
+          _testResult = 'Sem resposta da balança. Verifique:\n'
+              '• Cabo RS-232 bem ligado\n'
+              '• Porta correcta selecionada\n'
+              '• Protocolo configurado na balança (ex: protocolo 16 para Dibal)';
           _testSuccess = false;
         });
       }
@@ -1305,17 +1315,19 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
               title: const Text('Balança Activa'),
               subtitle: Text(_isEnabled
                   ? 'Leitura de peso activa'
-                  : 'Balança desactivada',),
+                  : 'Balança desactivada'),
               value: _isEnabled,
               onChanged: (value) {
                 setState(() => _isEnabled = value);
                 if (!value) {
+                  // Desactivar = limpar porta
                   _scaleService.saveConfig(ScaleConfig(
                     connectionType: ScaleConnectionType.serial,
                     protocol: _protocol,
                     serialPort: '',
                     baudRate: _baudRate,
-                  ),);
+                  ));
+                  _scaleService.disconnect();
                 }
               },
               secondary: Icon(
@@ -1360,7 +1372,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                         child: Row(
                           children: [
                             Icon(Icons.warning_amber,
-                                color: Theme.of(context).colorScheme.error,),
+                                color: Theme.of(context).colorScheme.error),
                             const SizedBox(width: 12),
                             const Expanded(
                               child: Text(
@@ -1486,14 +1498,15 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
                     color: _testSuccess == true
-                        ? Colors.green.withValues(alpha: 0.1)
-                        : Colors.red.withValues(alpha: 0.1),
+                        ? Colors.green.withOpacity(0.1)
+                        : Colors.red.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(8),
                     border: Border.all(
                       color: _testSuccess == true ? Colors.green : Colors.red,
                     ),
                   ),
                   child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Icon(
                         _testSuccess == true ? Icons.check_circle : Icons.error,

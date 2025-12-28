@@ -55,6 +55,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadDocumentSets();
       _loadSuspendedSales();
       _initBarcodeScanner();
     });
@@ -162,6 +163,13 @@ class _PosScreenState extends ConsumerState<PosScreen> {
     scanner.startScanning();
     _requestScannerFocus();
     AppLogger.i('🔊 Barcode scanner inicializado no POS');
+  }
+
+  void _loadDocumentSets() {
+    final docSetState = ref.read(documentSetProvider);
+    if (docSetState.documentTypeOptions.isEmpty && !docSetState.isLoading) {
+      ref.read(documentSetProvider.notifier).loadDocumentSets();
+    }
   }
 
   void _loadSuspendedSales() {
