@@ -21,6 +21,8 @@ env:
   APP_NAME: POS Moloni
   APP_EXECUTABLE: pos_moloni_app.exe
   APP_VERSION: 1.0.0
+  # Versão do Flutter compatível com retrofit_generator
+  FLUTTER_VERSION: '3.24.5'
 
 jobs:
   build-windows:
@@ -33,7 +35,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Get Flutter version
@@ -188,7 +190,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
 
       - name: Get dependencies
