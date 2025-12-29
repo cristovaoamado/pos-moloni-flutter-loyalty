@@ -1,13 +1,13 @@
 #!/usr/bin/env dart
 // ignore_for_file: avoid_print
 
-/// Script para converter código Flutter 3.27+ para Flutter 3.24 stable
-/// 
-/// Uso:
-///   dart run migrate_to_flutter_324.dart
-/// 
-/// Ou com dry-run (apenas mostra o que seria alterado):
-///   dart run migrate_to_flutter_324.dart --dry-run
+// Script para converter código Flutter 3.27+ para Flutter 3.24 stable
+//
+// Uso:
+//   dart run migrate_to_flutter_324.dart
+// 
+// Ou com dry-run (apenas mostra o que seria alterado):
+//   dart run migrate_to_flutter_324.dart --dry-run
 
 import 'dart:io';
 
