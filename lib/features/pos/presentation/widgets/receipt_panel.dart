@@ -8,7 +8,7 @@ import 'package:pos_moloni_app/features/customers/domain/entities/customer.dart'
 import 'package:pos_moloni_app/features/document_sets/domain/entities/document_set.dart';
 
 /// Painel do talão de venda (lado direito)
-class ReceiptPanel extends ConsumerWidget {
+class ReceiptPanel extends ConsumerStatefulWidget {
   const ReceiptPanel({
     super.key,
     required this.selectedDocumentOption,
@@ -39,8 +39,82 @@ class ReceiptPanel extends ConsumerWidget {
   final VoidCallback? onOpenDrawerTap;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ReceiptPanel> createState() => _ReceiptPanelState();
+}
+
+class _ReceiptPanelState extends ConsumerState<ReceiptPanel> {
+  final ScrollController _scrollController = ScrollController();
+  int _previousItemCount = 0;
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  /// Scroll para o fim da lista
+  void _scrollToBottom() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Scroll para o topo da lista
+  void _scrollToTop() {
+    if (_scrollController.hasClients) {
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Scroll para cima (uma página)
+  void _scrollUp() {
+    if (_scrollController.hasClients) {
+      final newOffset = (_scrollController.offset - 200).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        newOffset,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  /// Scroll para baixo (uma página)
+  void _scrollDown() {
+    if (_scrollController.hasClients) {
+      final newOffset = (_scrollController.offset + 200).clamp(
+        0.0,
+        _scrollController.position.maxScrollExtent,
+      );
+      _scrollController.animateTo(
+        newOffset,
+        duration: const Duration(milliseconds: 200),
+        curve: Curves.easeOut,
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final cart = ref.watch(cartProvider);
+
+    // Auto-scroll para o fim quando um novo item é adicionado
+    if (cart.items.length > _previousItemCount && cart.items.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _scrollToBottom();
+      });
+    }
+    _previousItemCount = cart.items.length;
 
     return Container(
       color: Theme.of(context).colorScheme.surfaceContainerLow,
@@ -54,22 +128,79 @@ class ReceiptPanel extends ConsumerWidget {
           _buildDocumentHeader(context),
           const Divider(height: 1),
 
-          // Lista de itens
+          // Lista de itens COM botões de scroll
           Expanded(
             child: cart.isEmpty
                 ? _buildEmptyCartState(context)
-                : ListView.builder(
-                    itemCount: cart.items.length,
-                    itemBuilder: (context, index) => _CartItemTile(
-                      item: cart.items[index],
-                      onTap: () => onItemTap(cart.items[index]),
-                    ),
-                  ),
+                : _buildCartListWithScrollButtons(context, cart),
           ),
 
           // Totais e botões
           _buildCartFooter(context, ref, cart),
         ],
+      ),
+    );
+  }
+
+  /// Lista de itens com botões de scroll para ecrãs touch
+  Widget _buildCartListWithScrollButtons(BuildContext context, CartState cart) {
+    return Column(
+      children: [
+        // Botão scroll para cima
+        _buildScrollButton(
+          context: context,
+          icon: Icons.keyboard_arrow_up,
+          onPressed: _scrollUp,
+          onLongPress: _scrollToTop,
+          tooltip: 'Scroll para cima (manter para ir ao topo)',
+        ),
+
+        // Lista de itens
+        Expanded(
+          child: ListView.builder(
+            controller: _scrollController,
+            itemCount: cart.items.length,
+            itemBuilder: (context, index) => _CartItemTile(
+              item: cart.items[index],
+              onTap: () => widget.onItemTap(cart.items[index]),
+            ),
+          ),
+        ),
+
+        // Botão scroll para baixo
+        _buildScrollButton(
+          context: context,
+          icon: Icons.keyboard_arrow_down,
+          onPressed: _scrollDown,
+          onLongPress: _scrollToBottom,
+          tooltip: 'Scroll para baixo (manter para ir ao fim)',
+        ),
+      ],
+    );
+  }
+
+  /// Botão de scroll estilizado para touch
+  Widget _buildScrollButton({
+    required BuildContext context,
+    required IconData icon,
+    required VoidCallback onPressed,
+    required VoidCallback onLongPress,
+    required String tooltip,
+  }) {
+    return Material(
+      color: Theme.of(context).colorScheme.surfaceContainerHighest,
+      child: InkWell(
+        onTap: onPressed,
+        onLongPress: onLongPress,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Icon(
+            icon,
+            size: 24,
+            color: Theme.of(context).colorScheme.primary,
+          ),
+        ),
       ),
     );
   }
@@ -83,8 +214,8 @@ class ReceiptPanel extends ConsumerWidget {
             child: _SmallButton(
               label: 'Vendas\nsuspensas',
               icon: Icons.pause_circle_outline,
-              onPressed: onSuspendedSalesTap,
-              badge: suspendedSalesCount > 0 ? suspendedSalesCount : null,
+              onPressed: widget.onSuspendedSalesTap,
+              badge: widget.suspendedSalesCount > 0 ? widget.suspendedSalesCount : null,
             ),
           ),
           const SizedBox(width: 4),
@@ -92,7 +223,7 @@ class ReceiptPanel extends ConsumerWidget {
             child: _SmallButton(
               label: 'Pesquisar\nclientes',
               icon: Icons.person_search,
-              onPressed: onCustomerSearchTap,
+              onPressed: widget.onCustomerSearchTap,
             ),
           ),
           const SizedBox(width: 4),
@@ -105,7 +236,7 @@ class ReceiptPanel extends ConsumerWidget {
               onPressed: cart.isEmpty
                   ? null
                   : () => _showGlobalDiscountDialog(
-                      context, ref, cart.globalDiscount,),
+                      context, ref, cart.globalDiscount),
               isActive: cart.hasGlobalDiscount,
             ),
           ),
@@ -115,7 +246,7 @@ class ReceiptPanel extends ConsumerWidget {
   }
 
   void _showGlobalDiscountDialog(
-      BuildContext context, WidgetRef ref, double currentDiscount,) {
+      BuildContext context, WidgetRef ref, double currentDiscount) {
     showDialog(
       context: context,
       builder: (context) => _GlobalDiscountDialog(
@@ -137,7 +268,7 @@ class ReceiptPanel extends ConsumerWidget {
         children: [
           // Tipo de documento
           InkWell(
-            onTap: onDocumentTypeTap,
+            onTap: widget.onDocumentTypeTap,
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
@@ -146,7 +277,7 @@ class ReceiptPanel extends ConsumerWidget {
               ),
               child: Row(
                 children: [
-                  if (isLoadingDocTypes)
+                  if (widget.isLoadingDocTypes)
                     SizedBox(
                       width: 16,
                       height: 16,
@@ -155,16 +286,16 @@ class ReceiptPanel extends ConsumerWidget {
                         color: Theme.of(context).colorScheme.onPrimary,
                       ),
                     )
-                  else if (selectedDocumentOption != null) ...[
+                  else if (widget.selectedDocumentOption != null) ...[
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2,),
+                          horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
                         color: Colors.white.withOpacity(0.2),
                         borderRadius: BorderRadius.circular(4),
                       ),
                       child: Text(
-                        selectedDocumentOption!.code,
+                        widget.selectedDocumentOption!.code,
                         style: TextStyle(
                           color: Theme.of(context).colorScheme.onPrimary,
                           fontWeight: FontWeight.bold,
@@ -176,7 +307,7 @@ class ReceiptPanel extends ConsumerWidget {
                   ],
                   Expanded(
                     child: Text(
-                      selectedDocumentOption?.displayName ??
+                      widget.selectedDocumentOption?.displayName ??
                           'Selecionar documento',
                       style: TextStyle(
                         color: Theme.of(context).colorScheme.onPrimary,
@@ -186,7 +317,7 @@ class ReceiptPanel extends ConsumerWidget {
                     ),
                   ),
                   Icon(Icons.arrow_drop_down,
-                      color: Theme.of(context).colorScheme.onPrimary,),
+                      color: Theme.of(context).colorScheme.onPrimary),
                 ],
               ),
             ),
@@ -200,7 +331,7 @@ class ReceiptPanel extends ConsumerWidget {
                   color: Theme.of(context)
                       .colorScheme
                       .outline
-                      .withOpacity(0.3),),
+                      .withOpacity(0.3)),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Row(
@@ -209,20 +340,20 @@ class ReceiptPanel extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(selectedCustomer.name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),),
+                      Text(widget.selectedCustomer.name,
+                          style: const TextStyle(fontWeight: FontWeight.bold)),
                       Text(
-                        'NIF: ${selectedCustomer.vat}',
+                        'NIF: ${widget.selectedCustomer.vat}',
                         style: TextStyle(
                             fontSize: 12,
-                            color: Theme.of(context).colorScheme.outline,),
+                            color: Theme.of(context).colorScheme.outline),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
                   icon: const Icon(Icons.add_circle_outline),
-                  onPressed: onCustomerSearchTap,
+                  onPressed: widget.onCustomerSearchTap,
                   tooltip: 'Alterar cliente',
                 ),
               ],
@@ -239,7 +370,7 @@ class ReceiptPanel extends ConsumerWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           Icon(Icons.shopping_cart_outlined,
-              size: 64, color: Theme.of(context).colorScheme.outline,),
+              size: 64, color: Theme.of(context).colorScheme.outline),
           const SizedBox(height: 16),
           Text(
             'Não existem artigos adicionados',
@@ -322,7 +453,7 @@ class ReceiptPanel extends ConsumerWidget {
                   Row(
                     children: [
                       Icon(Icons.percent,
-                          size: 14, color: Colors.green.shade700,),
+                          size: 14, color: Colors.green.shade700),
                       const SizedBox(width: 4),
                       Text(
                         'Desc. ${cart.formattedGlobalDiscount}',
@@ -368,13 +499,37 @@ class ReceiptPanel extends ConsumerWidget {
               ),
             ],
           ),
+          // Número de produtos/referências
+          if (cart.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    '${cart.itemCount} ${cart.itemCount == 1 ? 'referência' : 'referências'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                  Text(
+                    '${cart.totalQuantity.toStringAsFixed(cart.totalQuantity.truncateToDouble() == cart.totalQuantity ? 0 : 2)} ${cart.totalQuantity == 1 ? 'unidade' : 'unidades'}',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.outline,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           const SizedBox(height: 12),
           // Botão da gaveta (linha separada)
-          if (onOpenDrawerTap != null) ...[
+          if (widget.onOpenDrawerTap != null) ...[
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: onOpenDrawerTap,
+                onPressed: widget.onOpenDrawerTap,
                 icon: const Icon(Icons.point_of_sale, size: 18),
                 label: const Text('Abrir Gaveta'),
                 style: OutlinedButton.styleFrom(
@@ -390,7 +545,7 @@ class ReceiptPanel extends ConsumerWidget {
             children: [
               Expanded(
                 child: OutlinedButton(
-                  onPressed: cart.isEmpty ? null : onCancelTap,
+                  onPressed: cart.isEmpty ? null : widget.onCancelTap,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red,
                     side: const BorderSide(color: Colors.red),
@@ -402,7 +557,7 @@ class ReceiptPanel extends ConsumerWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: OutlinedButton(
-                  onPressed: cart.isEmpty ? null : onSuspendTap,
+                  onPressed: cart.isEmpty ? null : widget.onSuspendTap,
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.orange,
                     side: const BorderSide(color: Colors.orange),
@@ -415,7 +570,7 @@ class ReceiptPanel extends ConsumerWidget {
               Expanded(
                 flex: 2,
                 child: ElevatedButton(
-                  onPressed: cart.isEmpty ? null : onFinalizeTap,
+                  onPressed: cart.isEmpty ? null : widget.onFinalizeTap,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Theme.of(context).colorScheme.primary,
                     foregroundColor: Theme.of(context).colorScheme.onPrimary,
@@ -454,7 +609,7 @@ class _CartItemTile extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           border: Border.all(
               color:
-                  Theme.of(context).colorScheme.outline.withOpacity(0.2),),
+                  Theme.of(context).colorScheme.outline.withOpacity(0.2)),
         ),
         child: Row(
           children: [
@@ -465,7 +620,7 @@ class _CartItemTile extends StatelessWidget {
                   Text(
                     item.name,
                     style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 13,),
+                        fontWeight: FontWeight.bold, fontSize: 13),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -474,7 +629,7 @@ class _CartItemTile extends StatelessWidget {
                     'Ref: ${item.product.reference}',
                     style: TextStyle(
                         fontSize: 11,
-                        color: Theme.of(context).colorScheme.outline,),
+                        color: Theme.of(context).colorScheme.outline),
                   ),
                   Row(
                     children: [
@@ -482,13 +637,13 @@ class _CartItemTile extends StatelessWidget {
                         '${item.formattedQuantity} x ${item.unitPriceWithTax.toStringAsFixed(2)}€',
                         style: TextStyle(
                             fontSize: 11,
-                            color: Theme.of(context).colorScheme.outline,),
+                            color: Theme.of(context).colorScheme.outline),
                       ),
                       if (item.discount > 0) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 4, vertical: 1,),
+                              horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: Colors.orange.shade100,
                             borderRadius: BorderRadius.circular(4),
@@ -496,7 +651,7 @@ class _CartItemTile extends StatelessWidget {
                           child: Text(
                             '-${item.discount.toStringAsFixed(0)}%',
                             style: TextStyle(
-                                fontSize: 10, color: Colors.orange.shade800,),
+                                fontSize: 10, color: Colors.orange.shade800),
                           ),
                         ),
                       ],
@@ -584,9 +739,9 @@ class _SmallButton extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(4),
               decoration: const BoxDecoration(
-                  color: Colors.red, shape: BoxShape.circle,),
+                  color: Colors.red, shape: BoxShape.circle),
               child: Text('$badge',
-                  style: const TextStyle(color: Colors.white, fontSize: 10),),
+                  style: const TextStyle(color: Colors.white, fontSize: 10)),
             ),
           ),
       ],

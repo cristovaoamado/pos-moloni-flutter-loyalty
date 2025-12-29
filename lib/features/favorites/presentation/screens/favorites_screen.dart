@@ -22,6 +22,14 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
   bool _isSearching = false;
   String _searchQuery = '';
 
+  // Paginação
+  static const int _columns = 8;
+  static const int _rows = 3;
+  static const int _itemsPerPage = _columns * _rows; // 24 produtos por página
+  
+  int _currentFavoritesPage = 0;
+  int _currentSearchPage = 0;
+
   @override
   void initState() {
     super.initState();
@@ -42,6 +50,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     setState(() {
       _searchQuery = query;
       _isSearching = query.length >= 3;
+      _currentSearchPage = 0; // Reset página ao pesquisar
     });
 
     if (_isSearching) {
@@ -54,6 +63,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     setState(() {
       _searchQuery = '';
       _isSearching = false;
+      _currentSearchPage = 0;
     });
     ref.read(productProvider.notifier).clearSearchResults();
   }
@@ -242,30 +252,83 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // LISTA DE FAVORITOS COM PAGINAÇÃO
+  // ═══════════════════════════════════════════════════════════════════════════
+
   Widget _buildFavoritesList(LocalFavoritesState state) {
     if (state.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (state.isEmpty) {
       return _buildEmptyState();
     }
 
-    return GridView.builder(
-      padding: const EdgeInsets.all(16),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 4,
-        childAspectRatio: 0.75,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-      ),
-      itemCount: state.favorites.length,
-      itemBuilder: (context, index) {
-        final favorite = state.favorites[index];
-        return _buildFavoriteCard(favorite);
-      },
+    final totalItems = state.favorites.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    // Garantir que a página actual é válida
+    if (_currentFavoritesPage >= totalPages) {
+      _currentFavoritesPage = totalPages - 1;
+    }
+    if (_currentFavoritesPage < 0) {
+      _currentFavoritesPage = 0;
+    }
+
+    final startIndex = _currentFavoritesPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = state.favorites.sublist(startIndex, endIndex);
+
+    return Column(
+      children: [
+        // Grid de favoritos (página actual)
+        Expanded(
+          child: GridView.builder(
+            padding: const EdgeInsets.all(16),
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: _columns,
+              childAspectRatio: 0.75,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: pageItems.length,
+            itemBuilder: (context, index) {
+              final favorite = pageItems[index];
+              return _buildFavoriteCard(favorite);
+            },
+          ),
+        ),
+
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentFavoritesPage,
+            totalPages: totalPages,
+            totalItems: totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentFavoritesPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentFavoritesPage++;
+              });
+            },
+            onFirst: () {
+              setState(() {
+                _currentFavoritesPage = 0;
+              });
+            },
+            onLast: () {
+              setState(() {
+                _currentFavoritesPage = totalPages - 1;
+              });
+            },
+          ),
+      ],
     );
   }
 
@@ -281,7 +344,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -294,24 +357,24 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                               fit: BoxFit.contain,
                               errorBuilder: (_, __, ___) => Icon(
                                 Icons.inventory_2_outlined,
-                                size: 48,
+                                size: 40,
                                 color: Colors.grey.shade400,
                               ),
                             )
                           : Icon(
                               Icons.inventory_2_outlined,
-                              size: 48,
+                              size: 40,
                               color: Colors.grey.shade400,
                             ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   // Nome
                   Text(
                     favorite.name,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: 11,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -323,7 +386,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                     style: const TextStyle(
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -331,10 +394,10 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
             ),
             // Estrela de favorito
             Positioned(
-              top: 8,
-              right: 8,
+              top: 6,
+              right: 6,
               child: Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: Colors.amber.shade100,
                   shape: BoxShape.circle,
@@ -342,7 +405,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                 child: const Icon(
                   Icons.star,
                   color: Colors.amber,
-                  size: 20,
+                  size: 14,
                 ),
               ),
             ),
@@ -381,12 +444,13 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
     );
   }
 
-  Widget _buildSearchResults(
-      ProductState productState, LocalFavoritesState favoritesState,) {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // RESULTADOS DA PESQUISA COM PAGINAÇÃO
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildSearchResults(ProductState productState, LocalFavoritesState favoritesState) {
     if (productState.isLoading) {
-      return const Center(
-        child: CircularProgressIndicator(),
-      );
+      return const Center(child: CircularProgressIndicator());
     }
 
     if (productState.products.isEmpty) {
@@ -414,6 +478,20 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
       );
     }
 
+    final totalItems = productState.products.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    if (_currentSearchPage >= totalPages) {
+      _currentSearchPage = totalPages - 1;
+    }
+    if (_currentSearchPage < 0) {
+      _currentSearchPage = 0;
+    }
+
+    final startIndex = _currentSearchPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = productState.products.sublist(startIndex, endIndex);
+
     return Column(
       children: [
         // Header com resultados
@@ -423,7 +501,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
           child: Row(
             children: [
               Text(
-                '${productState.products.length} resultados',
+                '$totalItems resultados',
                 style: const TextStyle(fontWeight: FontWeight.w500),
               ),
               const Spacer(),
@@ -435,24 +513,54 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
             ],
           ),
         ),
-        // Grid de produtos
+
+        // Grid de produtos (página actual)
         Expanded(
           child: GridView.builder(
             padding: const EdgeInsets.all(16),
+            physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 4,
+              crossAxisCount: _columns,
               childAspectRatio: 0.75,
               crossAxisSpacing: 12,
               mainAxisSpacing: 12,
             ),
-            itemCount: productState.products.length,
+            itemCount: pageItems.length,
             itemBuilder: (context, index) {
-              final product = productState.products[index];
+              final product = pageItems[index];
               final isFavorite = favoritesState.isFavorite(product.id);
               return _buildProductCard(product, isFavorite);
             },
           ),
         ),
+
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentSearchPage,
+            totalPages: totalPages,
+            totalItems: totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentSearchPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentSearchPage++;
+              });
+            },
+            onFirst: () {
+              setState(() {
+                _currentSearchPage = 0;
+              });
+            },
+            onLast: () {
+              setState(() {
+                _currentSearchPage = totalPages - 1;
+              });
+            },
+          ),
       ],
     );
   }
@@ -472,7 +580,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
         child: Stack(
           children: [
             Padding(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(8),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -485,24 +593,24 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                               fit: BoxFit.contain,
                               errorBuilder: (_, __, ___) => Icon(
                                 Icons.inventory_2_outlined,
-                                size: 48,
+                                size: 40,
                                 color: Colors.grey.shade400,
                               ),
                             )
                           : Icon(
                               Icons.inventory_2_outlined,
-                              size: 48,
+                              size: 40,
                               color: Colors.grey.shade400,
                             ),
                     ),
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 6),
                   // Nome
                   Text(
                     product.name,
                     style: const TextStyle(
                       fontWeight: FontWeight.w600,
-                      fontSize: 13,
+                      fontSize: 11,
                     ),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
@@ -514,7 +622,7 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
                     style: const TextStyle(
                       color: AppColors.primary,
                       fontWeight: FontWeight.bold,
-                      fontSize: 14,
+                      fontSize: 12,
                     ),
                   ),
                 ],
@@ -522,24 +630,98 @@ class _FavoritesScreenState extends ConsumerState<FavoritesScreen> {
             ),
             // Estrela de favorito
             Positioned(
-              top: 8,
-              right: 8,
+              top: 6,
+              right: 6,
               child: Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
-                  color:
-                      isFavorite ? Colors.amber.shade100 : Colors.grey.shade200,
+                  color: isFavorite ? Colors.amber.shade100 : Colors.grey.shade200,
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
                   isFavorite ? Icons.star : Icons.star_border,
                   color: isFavorite ? Colors.amber : Colors.grey.shade500,
-                  size: 20,
+                  size: 14,
                 ),
               ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BARRA DE PAGINAÇÃO
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalPages,
+    required int totalItems,
+    required VoidCallback onPrevious,
+    required VoidCallback onNext,
+    required VoidCallback onFirst,
+    required VoidCallback onLast,
+  }) {
+    final hasPrevious = currentPage > 0;
+    final hasNext = currentPage < totalPages - 1;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade300),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Primeira página
+          IconButton(
+            onPressed: hasPrevious ? onFirst : null,
+            icon: const Icon(Icons.first_page),
+            tooltip: 'Primeira página',
+            iconSize: 28,
+          ),
+          // Página anterior
+          IconButton(
+            onPressed: hasPrevious ? onPrevious : null,
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Página anterior',
+            iconSize: 32,
+          ),
+          // Info da página
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'Página ${currentPage + 1} de $totalPages',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          // Próxima página
+          IconButton(
+            onPressed: hasNext ? onNext : null,
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Próxima página',
+            iconSize: 32,
+          ),
+          // Última página
+          IconButton(
+            onPressed: hasNext ? onLast : null,
+            icon: const Icon(Icons.last_page),
+            tooltip: 'Última página',
+            iconSize: 28,
+          ),
+        ],
       ),
     );
   }

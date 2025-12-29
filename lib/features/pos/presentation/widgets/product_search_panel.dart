@@ -5,6 +5,7 @@ import 'package:pos_moloni_app/features/cart/presentation/providers/cart_provide
 import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
 import 'package:pos_moloni_app/features/favorites/presentation/providers/local_favorites_provider.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
+import 'package:pos_moloni_app/features/products/domain/entities/tax.dart';
 import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
 
 /// Painel de pesquisa e grid de produtos com paginação para desktop
@@ -29,6 +30,14 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   final _searchController = TextEditingController();
   final _searchFocusNode = FocusNode();
   bool _isInitialized = false;
+
+  // Paginação
+  static const int _columns = 8;
+  static const int _rows = 3;
+  static const int _itemsPerPage = _columns * _rows; // 24 produtos por página
+  
+  int _currentFavoritesPage = 0;
+  int _currentSearchPage = 0;
 
   @override
   void initState() {
@@ -60,6 +69,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
 
   void _onSearch(String query) {
     if (query.length >= 3) {
+      _currentSearchPage = 0; // Reset página ao pesquisar
       ref.read(productProvider.notifier).searchProducts(query);
     } else if (query.isEmpty) {
       ref.read(productProvider.notifier).clearSearchResults();
@@ -68,12 +78,19 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
 
   void _clearSearch() {
     _searchController.clear();
+    _currentSearchPage = 0;
     ref.read(productProvider.notifier).clearSearchResults();
     setState(() {});
   }
 
   /// Converte FavoriteProductModel para Product
   Product _favoriteToProduct(FavoriteProductModel favorite) {
+    final tax = Tax(
+      id: 0,
+      name: 'IVA ${favorite.taxRate.toStringAsFixed(0)}%',
+      value: favorite.taxRate,
+    );
+
     return Product(
       id: favorite.productId,
       name: favorite.name,
@@ -82,7 +99,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       price: favorite.price,
       image: favorite.image,
       categoryId: favorite.categoryId,
-      taxes: const [], // Não temos os detalhes das taxes
+      measureUnit: favorite.measureUnit,
+      taxes: [tax],
     );
   }
 
@@ -95,9 +113,6 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     final productState = ref.watch(productProvider);
     final favoritesState = ref.watch(localFavoritesProvider);
 
-    // Determinar o que mostrar:
-    // 1. Se está a pesquisar ou tem resultados de pesquisa -> mostrar pesquisa
-    // 2. Se não está a pesquisar -> mostrar favoritos locais
     final bool showSearchResults = productState.isLoading ||
         productState.products.isNotEmpty ||
         productState.hasScannedProduct ||
@@ -114,8 +129,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             decoration: InputDecoration(
               labelText: 'Pesquisa de artigos',
               prefixIcon: const Icon(Icons.search),
-              border:
-                  OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
               suffixIcon: _searchController.text.isNotEmpty
                   ? IconButton(
                       icon: const Icon(Icons.clear),
@@ -137,18 +151,12 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
               ? _buildSearchContent(productState, favoritesState)
               : _buildFavoritesContent(favoritesState),
         ),
-
-        // Barra de paginação (se houver resultados na grid de pesquisa)
-        if (showSearchResults &&
-            productState.products.isNotEmpty &&
-            !productState.hasScannedProduct)
-          _buildPaginationBar(productState),
       ],
     );
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CONTEÚDO DOS FAVORITOS LOCAIS
+  // CONTEÚDO DOS FAVORITOS LOCAIS COM PAGINAÇÃO
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildFavoritesContent(LocalFavoritesState state) {
@@ -160,29 +168,68 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       return _buildEmptyFavoritesState();
     }
 
+    final totalItems = state.favorites.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    // Garantir que a página actual é válida
+    if (_currentFavoritesPage >= totalPages) {
+      _currentFavoritesPage = totalPages - 1;
+    }
+    if (_currentFavoritesPage < 0) {
+      _currentFavoritesPage = 0;
+    }
+
+    final startIndex = _currentFavoritesPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = state.favorites.sublist(startIndex, endIndex);
+
     return Column(
       children: [
         // Cabeçalho dos favoritos
-        _buildFavoritesHeader(state),
+        _buildFavoritesHeader(state, totalPages),
 
-        // Grid de favoritos
+        // Grid de favoritos (página actual)
         Expanded(
-          child: _buildFavoritesGrid(state.favorites),
+          child: _buildFavoritesGrid(pageItems),
         ),
+
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentFavoritesPage,
+            totalPages: totalPages,
+            totalItems: totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentFavoritesPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentFavoritesPage++;
+              });
+            },
+            onFirst: () {
+              setState(() {
+                _currentFavoritesPage = 0;
+              });
+            },
+            onLast: () {
+              setState(() {
+                _currentFavoritesPage = totalPages - 1;
+              });
+            },
+          ),
       ],
     );
   }
 
-  Widget _buildFavoritesHeader(LocalFavoritesState state) {
+  Widget _buildFavoritesHeader(LocalFavoritesState state, int totalPages) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       child: Row(
         children: [
-          const Icon(
-            Icons.star,
-            size: 20,
-            color: Colors.amber,
-          ),
+          const Icon(Icons.star, size: 20, color: Colors.amber),
           const SizedBox(width: 8),
           Text(
             'Favoritos',
@@ -209,7 +256,6 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             ),
           ),
           const Spacer(),
-          // Indicador de sincronização
           if (state.isSyncing)
             const Padding(
               padding: EdgeInsets.only(right: 8),
@@ -219,13 +265,11 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                 child: CircularProgressIndicator(strokeWidth: 2),
               ),
             ),
-          // Botão refresh
           IconButton(
             icon: const Icon(Icons.refresh, size: 20),
             onPressed: state.isSyncing
                 ? null
-                : () =>
-                    ref.read(localFavoritesProvider.notifier).syncFavorites(),
+                : () => ref.read(localFavoritesProvider.notifier).syncFavorites(),
             tooltip: 'Actualizar preços',
           ),
         ],
@@ -236,8 +280,9 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   Widget _buildFavoritesGrid(List<FavoriteProductModel> favorites) {
     return GridView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 12),
+      physics: const NeverScrollableScrollPhysics(), // Sem scroll - paginação
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 5,
+        crossAxisCount: _columns,
         childAspectRatio: 0.85,
         crossAxisSpacing: 8,
         mainAxisSpacing: 8,
@@ -257,28 +302,20 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.star_border,
-            size: 64,
-            color: Theme.of(context).colorScheme.outline,
-          ),
+          Icon(Icons.star_border, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             'Sem favoritos',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w500,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Pesquise produtos ou aceda ao ecrã de favoritos\npara adicionar produtos aos favoritos',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 14,
-              color: Theme.of(context).colorScheme.outline,
-            ),
+            'Pesquise produtos e adicione aos favoritos',
+            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
           ),
         ],
       ),
@@ -286,174 +323,134 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CONTEÚDO DA PESQUISA
+  // CONTEÚDO DA PESQUISA COM PAGINAÇÃO
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildSearchContent(
-      ProductState productState, LocalFavoritesState favoritesState,) {
+  Widget _buildSearchContent(ProductState productState, LocalFavoritesState favoritesState) {
     if (productState.isLoading) {
       return const Center(child: CircularProgressIndicator());
     }
 
-    if (productState.error != null) {
-      return _buildErrorState(productState.error!);
-    }
-
     if (productState.hasScannedProduct) {
-      return _buildScannedProductView(
-          productState.scannedProduct!, favoritesState,);
+      return _buildScannedProductView(productState, favoritesState);
     }
 
     if (productState.products.isEmpty) {
       return _buildEmptySearchState();
     }
 
+    final totalItems = productState.products.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    if (_currentSearchPage >= totalPages) {
+      _currentSearchPage = totalPages - 1;
+    }
+    if (_currentSearchPage < 0) {
+      _currentSearchPage = 0;
+    }
+
+    final startIndex = _currentSearchPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = productState.products.sublist(startIndex, endIndex);
+
     return Column(
       children: [
-        // Header com resultados e botão voltar
-        _buildSearchHeader(productState),
-        // Grid
+        // Header com resultados
+        _buildSearchHeader(totalItems, totalPages),
+
+        // Grid de produtos (página actual)
         Expanded(
-          child: _buildProductGrid(productState.products, favoritesState),
+          child: _buildProductGrid(pageItems, favoritesState),
         ),
+
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentSearchPage,
+            totalPages: totalPages,
+            totalItems: totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentSearchPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentSearchPage++;
+              });
+            },
+            onFirst: () {
+              setState(() {
+                _currentSearchPage = 0;
+              });
+            },
+            onLast: () {
+              setState(() {
+                _currentSearchPage = totalPages - 1;
+              });
+            },
+          ),
       ],
     );
   }
 
-  Widget _buildSearchHeader(ProductState state) {
+  Widget _buildSearchHeader(int totalItems, int totalPages) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context)
-            .colorScheme
-            .primaryContainer
-            .withOpacity(0.3),
-        border: Border(
-          bottom: BorderSide(color: Theme.of(context).dividerColor),
-        ),
-      ),
+      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
       child: Row(
         children: [
-          Icon(Icons.search,
-              size: 18, color: Theme.of(context).colorScheme.primary,),
+          Icon(Icons.search, size: 18, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 8),
           Text(
-            '${state.products.length} resultados',
-            style: const TextStyle(fontWeight: FontWeight.w500),
+            '$totalItems resultados',
+            style: const TextStyle(fontWeight: FontWeight.w600),
           ),
-          if (state.hasMore) ...[
-            Text(
-              ' de ${state.totalCount}',
-              style: TextStyle(
-                fontSize: 13,
-                color: Theme.of(context).colorScheme.outline,
-              ),
-            ),
-          ],
           const Spacer(),
           TextButton.icon(
             onPressed: _clearSearch,
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('Favoritos'),
+            icon: const Icon(Icons.close, size: 18),
+            label: const Text('Limpar'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProductGrid(
-      List<Product> products, LocalFavoritesState favoritesState,) {
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 5,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: products.length,
-      itemBuilder: (context, index) {
-        final product = products[index];
-        final isFavorite = favoritesState.isFavorite(product.id);
-        return _ProductCard(
-          product: product,
-          isFavorite: isFavorite,
-          onTap: () => widget.onProductTap(product),
-          onFavoriteToggle: () => _toggleFavorite(product),
-        );
-      },
-    );
-  }
-
-  void _toggleFavorite(Product product) async {
-    final wasAdded =
-        await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
-
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            wasAdded
-                ? '⭐ ${product.name} adicionado aos favoritos'
-                : '${product.name} removido dos favoritos',
-          ),
-          duration: const Duration(seconds: 2),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // ESTADOS ESPECIAIS
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  Widget _buildScannedProductView(
-      Product product, LocalFavoritesState favoritesState,) {
+  Widget _buildScannedProductView(ProductState productState, LocalFavoritesState favoritesState) {
+    final product = productState.scannedProduct!;
     final isFavorite = favoritesState.isFavorite(product.id);
 
     return Column(
       children: [
-        // Header
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.green.shade50,
-            border: Border(
-              bottom: BorderSide(color: Colors.green.shade200),
-            ),
-          ),
+          color: Colors.green.withOpacity(0.1),
           child: Row(
             children: [
-              Icon(Icons.qr_code_scanner,
-                  color: Colors.green.shade700, size: 20,),
+              const Icon(Icons.qr_code_scanner, color: Colors.green),
               const SizedBox(width: 8),
-              Text(
-                'Produto encontrado',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.green.shade700,
-                ),
-              ),
+              const Text('Produto scaneado', style: TextStyle(fontWeight: FontWeight.w600)),
               const Spacer(),
               TextButton.icon(
-                onPressed: _clearSearch,
-                icon: const Icon(Icons.arrow_back, size: 16),
-                label: const Text('Favoritos'),
+                onPressed: () {
+                  ref.read(productProvider.notifier).clearScannedProduct();
+                },
+                icon: const Icon(Icons.close, size: 18),
+                label: const Text('Limpar'),
               ),
             ],
           ),
         ),
-        // Produto em destaque
         Expanded(
           child: Center(
             child: SizedBox(
-              width: 180,
-              height: 220,
+              width: 200,
+              height: 250,
               child: _ProductCard(
                 product: product,
-                isFavorite: isFavorite,
                 onTap: () => widget.onProductTap(product),
+                isFavorite: isFavorite,
                 onFavoriteToggle: () => _toggleFavorite(product),
               ),
             ),
@@ -468,119 +465,115 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(
-            Icons.search_off,
-            size: 64,
-            color: Theme.of(context).colorScheme.outline,
-          ),
+          Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
           const SizedBox(height: 16),
           Text(
             'Nenhum produto encontrado',
-            style: TextStyle(
-              fontSize: 16,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            ),
-          ),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: _clearSearch,
-            icon: const Icon(Icons.arrow_back),
-            label: const Text('Voltar aos favoritos'),
+            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildErrorState(String error) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.error_outline,
-            size: 64,
-            color: Theme.of(context).colorScheme.error,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'Erro: $error',
-            style: TextStyle(
-              fontSize: 14,
-              color: Theme.of(context).colorScheme.error,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: _clearSearch,
-            icon: const Icon(Icons.arrow_back),
-            label: const Text('Voltar aos favoritos'),
-          ),
-        ],
+  Widget _buildProductGrid(List<Product> products, LocalFavoritesState favoritesState) {
+    return GridView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: _columns,
+        childAspectRatio: 0.85,
+        crossAxisSpacing: 8,
+        mainAxisSpacing: 8,
       ),
+      itemCount: products.length,
+      itemBuilder: (context, index) {
+        final product = products[index];
+        final isFavorite = favoritesState.isFavorite(product.id);
+        return _ProductCard(
+          product: product,
+          onTap: () => widget.onProductTap(product),
+          isFavorite: isFavorite,
+          onFavoriteToggle: () => _toggleFavorite(product),
+        );
+      },
     );
   }
 
-  Widget _buildPaginationBar(ProductState productState) {
+  void _toggleFavorite(Product product) {
+    ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BARRA DE PAGINAÇÃO
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalPages,
+    required int totalItems,
+    required VoidCallback onPrevious,
+    required VoidCallback onNext,
+    required VoidCallback onFirst,
+    required VoidCallback onLast,
+  }) {
+    final hasPrevious = currentPage > 0;
+    final hasNext = currentPage < totalPages - 1;
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        color: Theme.of(context).colorScheme.surfaceContainerHighest,
         border: Border(
           top: BorderSide(color: Theme.of(context).dividerColor),
         ),
       ),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Text(
-            productState.hasMore
-                ? '${productState.products.length}+ produtos'
-                : '${productState.products.length} produto${productState.products.length != 1 ? 's' : ''}',
-            style: TextStyle(
-              fontSize: 13,
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
+          // Primeira página
+          IconButton(
+            onPressed: hasPrevious ? onFirst : null,
+            icon: const Icon(Icons.first_page),
+            tooltip: 'Primeira página',
+            iconSize: 28,
+          ),
+          // Página anterior
+          IconButton(
+            onPressed: hasPrevious ? onPrevious : null,
+            icon: const Icon(Icons.chevron_left),
+            tooltip: 'Página anterior',
+            iconSize: 32,
+          ),
+          // Info da página
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              'Página ${currentPage + 1} de $totalPages',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
           ),
-          const Spacer(),
-          if (productState.hasMore)
-            ElevatedButton.icon(
-              onPressed: productState.isLoadingMore
-                  ? null
-                  : () => ref.read(productProvider.notifier).loadMoreProducts(),
-              icon: productState.isLoadingMore
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.add, size: 18),
-              label: Text(productState.isLoadingMore
-                  ? 'A carregar...'
-                  : 'Carregar mais',),
-              style: ElevatedButton.styleFrom(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-              ),
-            )
-          else
-            Row(
-              children: [
-                Icon(
-                  Icons.check_circle_outline,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Todos carregados',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                ),
-              ],
-            ),
+          // Próxima página
+          IconButton(
+            onPressed: hasNext ? onNext : null,
+            icon: const Icon(Icons.chevron_right),
+            tooltip: 'Próxima página',
+            iconSize: 32,
+          ),
+          // Última página
+          IconButton(
+            onPressed: hasNext ? onLast : null,
+            icon: const Icon(Icons.last_page),
+            tooltip: 'Última página',
+            iconSize: 28,
+          ),
         ],
       ),
     );
@@ -602,8 +595,7 @@ class _FavoriteCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart =
-        ref.watch(cartProvider.notifier).containsProduct(favorite.productId);
+    final isInCart = ref.watch(cartProvider.notifier).containsProduct(favorite.productId);
 
     return Card(
       elevation: 2,
@@ -618,8 +610,7 @@ class _FavoriteCard extends ConsumerWidget {
                 ? Image.network(
                     favorite.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildPlaceholderImage(context),
+                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
                   )
                 : _buildPlaceholderImage(context),
 
@@ -629,14 +620,14 @@ class _FavoriteCard extends ConsumerWidget {
               right: 0,
               bottom: 0,
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.7),
+                      Colors.brown.withOpacity(0.8),
+                      Colors.brown.withOpacity(0.8),
                     ],
                   ),
                 ),
@@ -648,20 +639,41 @@ class _FavoriteCard extends ConsumerWidget {
                       favorite.name,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 11,
                         color: Colors.white,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
-                    Text(
-                      favorite.formattedPriceWithTax,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                        color: Colors.white,
-                      ),
+                    const SizedBox(height: 2),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          favorite.formattedPriceWithTax,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12,
+                            color: Colors.white,
+                          ),
+                        ),
+                        if (favorite.isWeighable)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.orange.withOpacity(0.8),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'kg',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -670,10 +682,10 @@ class _FavoriteCard extends ConsumerWidget {
 
             // Badge favorito
             Positioned(
-              top: 6,
-              left: 6,
+              top: 4,
+              left: 4,
               child: Container(
-                padding: const EdgeInsets.all(4),
+                padding: const EdgeInsets.all(3),
                 decoration: BoxDecoration(
                   color: Colors.amber,
                   shape: BoxShape.circle,
@@ -685,21 +697,17 @@ class _FavoriteCard extends ConsumerWidget {
                     ),
                   ],
                 ),
-                child: const Icon(
-                  Icons.star,
-                  size: 12,
-                  color: Colors.white,
-                ),
+                child: const Icon(Icons.star, size: 10, color: Colors.white),
               ),
             ),
 
             // Badge carrinho
             if (isInCart)
               Positioned(
-                top: 6,
-                right: 6,
+                top: 4,
+                right: 4,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
@@ -713,7 +721,7 @@ class _FavoriteCard extends ConsumerWidget {
                   ),
                   child: Icon(
                     Icons.shopping_cart,
-                    size: 14,
+                    size: 10,
                     color: Theme.of(context).colorScheme.onPrimary,
                   ),
                 ),
@@ -729,7 +737,7 @@ class _FavoriteCard extends ConsumerWidget {
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Icon(
         Icons.inventory_2,
-        size: 48,
+        size: 32,
         color: Theme.of(context).colorScheme.outline,
       ),
     );
@@ -755,8 +763,7 @@ class _ProductCard extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart =
-        ref.watch(cartProvider.notifier).containsProduct(product.id);
+    final isInCart = ref.watch(cartProvider.notifier).containsProduct(product.id);
 
     return Card(
       elevation: 2,
@@ -772,8 +779,7 @@ class _ProductCard extends ConsumerWidget {
                 ? Image.network(
                     product.imageUrl!,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) =>
-                        _buildPlaceholderImage(context),
+                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
                   )
                 : _buildPlaceholderImage(context),
 
@@ -783,14 +789,14 @@ class _ProductCard extends ConsumerWidget {
               right: 0,
               bottom: 0,
               child: Container(
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.all(6),
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
                     colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.7),
+                      Colors.brown.withOpacity(0.8),
+                      Colors.brown.withOpacity(0.8),
                     ],
                   ),
                 ),
@@ -802,13 +808,13 @@ class _ProductCard extends ConsumerWidget {
                       product.name,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 11,
                         color: Colors.white,
                       ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 2),
                     Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
@@ -816,21 +822,19 @@ class _ProductCard extends ConsumerWidget {
                           product.formattedPriceWithTax,
                           style: const TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 14,
+                            fontSize: 12,
                             color: Colors.white,
                           ),
                         ),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 6, vertical: 2,),
+                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                           decoration: BoxDecoration(
                             color: Colors.white.withOpacity(0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '${product.totalTaxRate.toStringAsFixed(0)}%',
-                            style: const TextStyle(
-                                fontSize: 10, color: Colors.white,),
+                            style: const TextStyle(fontSize: 9, color: Colors.white),
                           ),
                         ),
                       ],
@@ -840,18 +844,16 @@ class _ProductCard extends ConsumerWidget {
               ),
             ),
 
-            // Botão favorito (clicável)
+            // Botão favorito
             Positioned(
-              top: 6,
-              left: 6,
+              top: 4,
+              left: 4,
               child: GestureDetector(
                 onTap: onFavoriteToggle,
                 child: Container(
-                  padding: const EdgeInsets.all(4),
+                  padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
-                    color: isFavorite
-                        ? Colors.amber
-                        : Colors.black.withOpacity(0.4),
+                    color: isFavorite ? Colors.amber : Colors.black.withOpacity(0.4),
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
@@ -863,7 +865,7 @@ class _ProductCard extends ConsumerWidget {
                   ),
                   child: Icon(
                     isFavorite ? Icons.star : Icons.star_border,
-                    size: 14,
+                    size: 12,
                     color: Colors.white,
                   ),
                 ),
@@ -873,10 +875,10 @@ class _ProductCard extends ConsumerWidget {
             // Badge carrinho
             if (isInCart)
               Positioned(
-                top: 6,
-                right: 6,
+                top: 4,
+                right: 4,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: const EdgeInsets.all(4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primary,
                     shape: BoxShape.circle,
@@ -890,7 +892,7 @@ class _ProductCard extends ConsumerWidget {
                   ),
                   child: Icon(
                     Icons.shopping_cart,
-                    size: 14,
+                    size: 10,
                     color: Theme.of(context).colorScheme.onPrimary,
                   ),
                 ),
@@ -906,7 +908,7 @@ class _ProductCard extends ConsumerWidget {
       color: Theme.of(context).colorScheme.surfaceContainerHighest,
       child: Icon(
         Icons.inventory_2,
-        size: 48,
+        size: 32,
         color: Theme.of(context).colorScheme.outline,
       ),
     );

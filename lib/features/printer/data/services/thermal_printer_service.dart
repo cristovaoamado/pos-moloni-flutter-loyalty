@@ -85,7 +85,7 @@ class ThermalPrinterService {
   
   // Comandos de abertura de gaveta - vários padrões comuns
   static const List<int> _cmdOpenDrawer1 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250 (mais comum)
-  // static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
+  static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
   // static const List<int> _cmdOpenDrawerAlt = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (algumas Star/Citizen)
 
   /// Configura a impressora
@@ -372,7 +372,7 @@ class ThermalPrinterService {
 
       if (result) {
         // Tentar também via RawDataPrinter se disponível
-        await _sendRawEscPosToWindowsPrinter(printer.name, _cmdOpenDrawer1);
+        await _sendRawEscPosToWindowsPrinter(printer.name, _cmdOpenDrawer2);
         return PrintResult.ok('Comando de gaveta enviado');
       } else {
         return PrintResult.fail('Falha ao enviar comando');

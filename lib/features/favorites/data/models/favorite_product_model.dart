@@ -15,6 +15,7 @@ class FavoriteProductModel extends HiveObject {
     this.image,
     required this.categoryId,
     this.taxRate = 23.0,
+    this.measureUnit,
     DateTime? addedAt,
     DateTime? lastUpdated,
   })  : addedAt = addedAt ?? DateTime.now(),
@@ -30,6 +31,7 @@ class FavoriteProductModel extends HiveObject {
     String? image,
     required int categoryId,
     double taxRate = 23.0,
+    String? measureUnit,
   }) {
     return FavoriteProductModel(
       productId: productId,
@@ -40,6 +42,7 @@ class FavoriteProductModel extends HiveObject {
       image: image,
       categoryId: categoryId,
       taxRate: taxRate,
+      measureUnit: measureUnit,
     );
   }
 
@@ -73,6 +76,10 @@ class FavoriteProductModel extends HiveObject {
   @HiveField(9)
   DateTime lastUpdated;
 
+  /// Unidade de medida (kg, un, etc.) - NOVO CAMPO
+  @HiveField(10)
+  final String? measureUnit;
+
   /// URL completa da imagem
   String? get imageUrl {
     if (image == null || image!.isEmpty) return null;
@@ -85,6 +92,18 @@ class FavoriteProductModel extends HiveObject {
   /// Preço formatado com IVA
   String get formattedPriceWithTax => '${priceWithTax.toStringAsFixed(2)} €';
 
+  /// Verifica se o produto é vendido ao peso
+  bool get isWeighable {
+    if (measureUnit == null) return false;
+    final unit = measureUnit!.toLowerCase();
+    return unit.contains('kg') ||
+        unit.contains('g') ||
+        unit == 'quilograma' ||
+        unit == 'quilogramas' ||
+        unit == 'grama' ||
+        unit == 'gramas';
+  }
+
   /// Actualiza os dados do produto (mantém addedAt original)
   FavoriteProductModel copyWithUpdatedData({
     String? name,
@@ -94,6 +113,7 @@ class FavoriteProductModel extends HiveObject {
     String? image,
     int? categoryId,
     double? taxRate,
+    String? measureUnit,
   }) {
     return FavoriteProductModel(
       productId: productId,
@@ -104,11 +124,12 @@ class FavoriteProductModel extends HiveObject {
       image: image ?? this.image,
       categoryId: categoryId ?? this.categoryId,
       taxRate: taxRate ?? this.taxRate,
+      measureUnit: measureUnit ?? this.measureUnit,
       addedAt: addedAt,
       lastUpdated: DateTime.now(),
     );
   }
 
   @override
-  String toString() => 'FavoriteProduct(id: $productId, name: $name)';
+  String toString() => 'FavoriteProduct(id: $productId, name: $name, measureUnit: $measureUnit)';
 }
