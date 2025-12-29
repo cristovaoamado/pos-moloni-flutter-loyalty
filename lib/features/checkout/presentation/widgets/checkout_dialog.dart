@@ -186,7 +186,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
       child: Container(
         width: 500,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.95,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -209,7 +209,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  const Spacer(),
+                  // const Spacer(),
                   Text(
                     widget.documentTypeOption.shortName,
                     style: const TextStyle(color: Colors.white70),
@@ -221,7 +221,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
             // Conteúdo scrollável
             Flexible(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20),
+                padding: const EdgeInsets.all(10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -232,23 +232,23 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                         const SizedBox(width: 8),
                         Text(
                           widget.customer.name,
-                          style: const TextStyle(fontSize: 14),
+                          style: const TextStyle(fontSize: 12),
                         ),
                         const Spacer(),
                         Text(
                           '${widget.items.length} artigo${widget.items.length != 1 ? 's' : ''}',
-                          style: TextStyle(
+                          style: TextStyle( fontSize: 12,
                             color: Theme.of(context).colorScheme.outline,
                           ),
                         ),
                       ],
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 5),
 
                     // Total a pagar
                     Container(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.all(8),
                       decoration: BoxDecoration(
                         color: const Color(0xFFD4A574), // Ouro velho / olive torrado
                         borderRadius: BorderRadius.circular(0),
@@ -275,14 +275,14 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                       ),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 5),
 
                     // Método de pagamento
                     const Text(
                       'Método de Pagamento',
                       style: TextStyle(fontWeight: FontWeight.w500),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 2),
                     
                     // Usar Wrap para métodos de pagamento (evita overflow)
                     Wrap(
@@ -305,7 +305,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                               },
                               borderRadius: BorderRadius.circular(8),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(vertical: 16),
+                                padding: const EdgeInsets.symmetric(vertical: 4),
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
@@ -316,7 +316,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                                           ? Colors.white
                                           : Theme.of(context).colorScheme.onSurfaceVariant,
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(height: 4),
                                     Text(
                                       method.name,
                                       style: TextStyle(
@@ -339,7 +339,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                       }).toList(),
                     ),
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 5),
 
                     // Valor entregue
                     const Text(
