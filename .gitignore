@@ -1,61 +1,73 @@
-# Miscellaneous
-*.class
-*.log
-*.pyc
-*.swp
-.DS_Store
-.atom/
-.build/
-.buildlog/
-.history
-.svn/
-.swiftpm/
-migrate_working_dir/
-
-# IntelliJ related
-*.iml
-*.ipr
-*.iws
-.idea/
-
-# The .vscode folder contains launch configuration and tasks you configure in
-# VS Code which you may wish to be included in version control, so this line
-# is commented out by default.
-#.vscode/
-
-# Flutter/Dart/Pub related
-**/doc/api/
-**/ios/Flutter/.last_build_id
+# Flutter/Dart
 .dart_tool/
+.packages
+build/
 .flutter-plugins
 .flutter-plugins-dependencies
-.pub-cache/
 .pub/
-/build/
+pubspec.lock
 
-# Symbolication related
-app.*.symbols
-
-# Obfuscation related
-app.*.map.json
-
-# Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
-
-# Credentials (NUNCA commitar)
-lib/core/constants/credentials.dart
-*.env
-
-# Generated files
+# Generated files - SEMPRE regenerar no CI
 *.g.dart
 *.freezed.dart
+*.gr.dart
+*.mocks.dart
 
 # IDE
+.idea/
+*.iml
 .vscode/
-.fleet/
+*.swp
+*.swo
+*~
 
-# Hive
-*.hive
-*.lock
+# macOS
+.DS_Store
+*.dmg
+macos/Pods/
+macos/.symlinks/
+
+# Windows
+*.exe
+*.dll
+*.pdb
+windows/flutter/ephemeral/
+
+# Android
+android/.gradle/
+android/local.properties
+android/*.keystore
+android/app/debug/
+android/app/profile/
+android/app/release/
+
+# iOS
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/ephemeral/
+
+# Logs
+*.log
+logs/
+
+# Environment/Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Build outputs
+installer_output/
+*.zip
+*.msix
+
+# Test coverage
+coverage/
+.test_coverage/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
