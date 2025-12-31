@@ -89,9 +89,6 @@ class ThermalPrinterService {
   // t1 = tempo ON (t1 × 2 ms) - 50 = 100ms
   // t2 = tempo OFF (t2 × 2 ms) - 255 = 510ms
   static const List<int> _cmdOpenDrawerEpson = [0x1B, 0x70, 0x00, 0x32, 0xFF]; // ESC p 0 50 255 - Epson TM-T20II
-  static const List<int> _cmdOpenDrawer1 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250 (genérico)
-  static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
-  static const List<int> _cmdOpenDrawerDLE = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (Star/Citizen)
 
   /// Configura a impressora
   void configure(PrinterConfig config) {
