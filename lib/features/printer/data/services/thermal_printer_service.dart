@@ -83,10 +83,15 @@ class ThermalPrinterService {
   static const List<int> _cmdFeed1 = [0x0A]; // Line feed
   static const List<int> _cmdFeed3 = [0x1B, 0x64, 0x03]; // ESC d 3 - Feed 3 lines
   
-  // Comandos de abertura de gaveta - vários padrões comuns
-  static const List<int> _cmdOpenDrawer1 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250 (mais comum)
+  // Comandos de abertura de gaveta
+  // EPSON TM-T20II usa ESC p m t1 t2
+  // m = 0 (pino 2) ou 1 (pino 5)
+  // t1 = tempo ON (t1 × 2 ms) - 50 = 100ms
+  // t2 = tempo OFF (t2 × 2 ms) - 255 = 510ms
+  static const List<int> _cmdOpenDrawerEpson = [0x1B, 0x70, 0x00, 0x32, 0xFF]; // ESC p 0 50 255 - Epson TM-T20II
+  static const List<int> _cmdOpenDrawer1 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250 (genérico)
   static const List<int> _cmdOpenDrawer2 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250 (pino 5)
-  // static const List<int> _cmdOpenDrawerAlt = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (algumas Star/Citizen)
+  static const List<int> _cmdOpenDrawerDLE = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4 (Star/Citizen)
 
   /// Configura a impressora
   void configure(PrinterConfig config) {
@@ -319,11 +324,13 @@ class ThermalPrinterService {
   }
 
   /// Abre gaveta via impressora de rede (ESC/POS directo)
+  /// Tenta primeiro comando Epson, depois genérico, depois DLE
   Future<PrintResult> _openDrawerNetwork() async {
     try {
+      // Comando Epson TM-T20II (mais fiável para esta impressora)
       final bytes = <int>[];
       bytes.addAll(_cmdInit);
-      bytes.addAll(_cmdOpenDrawer1); // Pino 2 (mais comum)
+      bytes.addAll(_cmdOpenDrawerEpson);
 
       return await _printNetwork(bytes);
     } catch (e) {
@@ -372,7 +379,7 @@ class ThermalPrinterService {
 
       if (result) {
         // Tentar também via RawDataPrinter se disponível
-        await _sendRawEscPosToWindowsPrinter(printer.name, _cmdOpenDrawer2);
+        await _sendRawEscPosToWindowsPrinter(printer.name, _cmdOpenDrawerEpson);
         return PrintResult.ok('Comando de gaveta enviado');
       } else {
         return PrintResult.fail('Falha ao enviar comando');
@@ -391,9 +398,10 @@ class ThermalPrinterService {
       final tempDir = Directory.systemTemp;
       final tempFile = File('${tempDir.path}/drawer_cmd.bin');
       
+      // Usar comando Epson TM-T20II
       final bytes = <int>[];
       bytes.addAll(_cmdInit);
-      bytes.addAll(_cmdOpenDrawer1);
+      bytes.addAll(_cmdOpenDrawerEpson);
       
       await tempFile.writeAsBytes(bytes);
 

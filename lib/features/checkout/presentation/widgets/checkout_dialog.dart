@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:pos_moloni_app/features/cart/domain/entities/cart_item.dart';
+import 'package:pos_moloni_app/features/cart/presentation/providers/cart_provider.dart';
 import 'package:pos_moloni_app/features/checkout/data/datasources/document_remote_datasource.dart';
 import 'package:pos_moloni_app/features/checkout/domain/entities/document.dart';
 import 'package:pos_moloni_app/features/checkout/presentation/providers/checkout_provider.dart';
@@ -51,22 +52,14 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
     _amountController.text = widget.total.toStringAsFixed(2);
     _amountPaid = widget.total;
     
-    // Pré-selecionar Numerário (ou primeiro método disponível)
+    // Pré-selecionar Numerário imediatamente (se disponível)
+    _preselectNumerario();
+    
+    // Focus no campo de valor após build
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final methods = ref.read(checkoutProvider).paymentMethods;
-      if (methods.isNotEmpty && _selectedPaymentMethod == null) {
-        // Procurar Numerário primeiro
-        final numerario = methods.where((m) {
-          final name = m.name.toLowerCase();
-          return name.contains('numerario') || 
-                 name.contains('numerário') || 
-                 name.contains('dinheiro') ||
-                 name.contains('cash');
-        }).firstOrNull;
-        
-        setState(() {
-          _selectedPaymentMethod = numerario ?? methods.first;
-        });
+      // Garantir novamente a pré-seleção após o frame (caso methods carreguem depois)
+      if (_selectedPaymentMethod == null) {
+        _preselectNumerario();
       }
       
       // Focus no campo de valor e selecionar todo o texto
@@ -75,6 +68,25 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
         baseOffset: 0,
         extentOffset: _amountController.text.length,
       );
+    });
+  }
+
+  /// Pré-seleciona Numerário como método de pagamento padrão
+  void _preselectNumerario() {
+    final methods = ref.read(checkoutProvider).paymentMethods;
+    if (methods.isEmpty) return;
+    
+    // Procurar Numerário primeiro
+    final numerario = methods.where((m) {
+      final name = m.name.toLowerCase();
+      return name.contains('numerario') || 
+             name.contains('numerário') || 
+             name.contains('dinheiro') ||
+             name.contains('cash');
+    }).firstOrNull;
+    
+    setState(() {
+      _selectedPaymentMethod = numerario ?? methods.first;
     });
   }
 
@@ -147,6 +159,50 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
     }
   }
 
+  /// Cancela o checkout e limpa o carrinho
+  Future<void> _cancelCheckout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancelar Venda?'),
+        content: const Text(
+          'Ao cancelar, todos os produtos do carrinho serão removidos.\n\n'
+          'Tem a certeza que pretende cancelar?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Voltar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Cancelar Venda'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      // Limpar o carrinho
+      ref.read(cartProvider.notifier).clearCart();
+      
+      // Fechar o diálogo
+      Navigator.of(context).pop(false);
+      
+      // Mostrar feedback
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Venda cancelada e carrinho limpo'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+    }
+  }
+
   void _onAmountChanged(String value) {
     final parsed = double.tryParse(value.replaceAll(',', '.'));
     setState(() {
@@ -180,7 +236,15 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final paymentMethods = ref.watch(checkoutProvider).paymentMethods;
+    final checkoutState = ref.watch(checkoutProvider);
+    final paymentMethods = checkoutState.paymentMethods;
+    
+    // Se os métodos de pagamento carregaram e ainda não há selecção, selecionar
+    if (paymentMethods.isNotEmpty && _selectedPaymentMethod == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _preselectNumerario();
+      });
+    }
 
     return Dialog(
       child: Container(
@@ -209,7 +273,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  // const Spacer(),
+                  const Spacer(),
                   Text(
                     widget.documentTypeOption.shortName,
                     style: const TextStyle(color: Colors.white70),
@@ -237,7 +301,8 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
                         const Spacer(),
                         Text(
                           '${widget.items.length} artigo${widget.items.length != 1 ? 's' : ''}',
-                          style: TextStyle( fontSize: 12,
+                          style: TextStyle(
+                            fontSize: 12,
                             color: Theme.of(context).colorScheme.outline,
                           ),
                         ),
@@ -476,11 +541,24 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
               ),
               child: Row(
                 children: [
-                  TextButton(
-                    onPressed: _isProcessing ? null : () => Navigator.of(context).pop(false),
-                    child: const Text('Cancelar'),
+                  // Botão Cancelar - agora limpa o carrinho
+                  ElevatedButton.icon(
+                    onPressed: _isProcessing ? null : _cancelCheckout,
+                    icon: const Icon(Icons.delete_outline),
+                    label: const Text('Cancelar Venda'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade100,
+                      foregroundColor: Colors.red.shade700,
+                    ),
                   ),
                   const Spacer(),
+                  // Botão Voltar (só fecha o diálogo)
+                  TextButton(
+                    onPressed: _isProcessing ? null : () => Navigator.of(context).pop(false),
+                    child: const Text('Voltar'),
+                  ),
+                  const SizedBox(width: 8),
+                  // Botão Finalizar
                   ElevatedButton.icon(
                     onPressed: _canFinalize && !_isProcessing ? _processPayment : null,
                     icon: _isProcessing

@@ -17,6 +17,7 @@ import 'package:pos_moloni_app/features/products/presentation/providers/product_
 import 'package:pos_moloni_app/features/settings/presentation/screens/settings_screen.dart';
 import 'package:pos_moloni_app/features/suspended_sales/presentation/providers/suspended_sales_provider.dart';
 import 'package:pos_moloni_app/features/suspended_sales/presentation/widgets/suspended_sales_dialog.dart';
+import 'package:pos_moloni_app/features/scale/services/scale_service.dart';
 
 import 'package:pos_moloni_app/features/pos/presentation/models/pos_models.dart';
 import 'package:pos_moloni_app/features/pos/presentation/widgets/product_search_panel.dart';
@@ -51,6 +52,10 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   /// Estado do foco do scanner (para UI reactiva)
   bool _scannerHasFocus = false;
 
+  /// Estado da balança
+  bool _scaleConnected = false;
+  bool _scaleConnecting = false;
+
   @override
   void initState() {
     super.initState();
@@ -58,6 +63,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       _loadDocumentSets();
       _loadSuspendedSales();
       _initBarcodeScanner();
+      _checkScaleConnection();
     });
 
     _scannerFocusNode.addListener(_onFocusChange);
@@ -87,6 +93,115 @@ class _PosScreenState extends ConsumerState<PosScreen> {
   void _requestScannerFocus() {
     _scannerFocusNode.requestFocus();
     AppLogger.i('🔊 Scanner: Foco forçado pelo utilizador');
+  }
+
+  // ==================== BALANÇA ====================
+
+  Future<void> _checkScaleConnection() async {
+    final scaleService = ScaleService.instance;
+    await scaleService.loadConfig();
+    
+    if (scaleService.config.serialPort.isEmpty) {
+      setState(() => _scaleConnected = false);
+      return;
+    }
+
+    // Tentar uma leitura para verificar conexão
+    try {
+      final reading = await scaleService.readWeight();
+      setState(() => _scaleConnected = reading != null);
+    } catch (e) {
+      setState(() => _scaleConnected = false);
+    }
+  }
+
+  Future<void> _connectScale() async {
+    if (_scaleConnecting) return;
+
+    setState(() => _scaleConnecting = true);
+
+    try {
+      final scaleService = ScaleService.instance;
+      await scaleService.loadConfig();
+
+      if (scaleService.config.serialPort.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Balança não configurada. Vá a Configurações → Balança'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+        }
+        setState(() {
+          _scaleConnected = false;
+          _scaleConnecting = false;
+        });
+        return;
+      }
+
+      // Tentar ler peso para verificar conexão
+      final reading = await scaleService.readWeight();
+
+      if (reading != null) {
+        setState(() => _scaleConnected = true);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.white),
+                  const SizedBox(width: 8),
+                  Text('Balança conectada: ${reading.weight.toStringAsFixed(3)} ${reading.unit}'),
+                ],
+              ),
+              backgroundColor: Colors.green,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        setState(() => _scaleConnected = false);
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Row(
+                children: [
+                  Icon(Icons.error, color: Colors.white),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text('Sem resposta da balança. Verifique a ligação e configuração.'),
+                  ),
+                ],
+              ),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+              action: SnackBarAction(
+                label: 'Configurar',
+                textColor: Colors.white,
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const SettingsScreen()),
+                  );
+                },
+              ),
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _scaleConnected = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao conectar balança: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      setState(() => _scaleConnecting = false);
+    }
   }
 
   void _initBarcodeScanner() {
@@ -640,7 +755,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     // ==================== LISTENER DE AUTENTICAÇÃO ====================
     ref.listen<AuthState>(authProvider, (prev, next) {
-      // Se passou a precisar de login (sessão expirou e não conseguiu recuperar)
       if (next.requiresLogin &&
           !next.isRecovering &&
           prev?.requiresLogin != true) {
@@ -650,7 +764,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         });
       }
 
-      // Se está a recuperar sessão, mostrar indicador
       if (next.isRecovering && prev?.isRecovering != true) {
         AppLogger.i('🔄 POS: A recuperar sessão...');
         if (mounted) {
@@ -677,7 +790,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
         }
       }
 
-      // Se recuperou a sessão com sucesso
       if (prev?.isRecovering == true &&
           !next.isRecovering &&
           next.isAuthenticated) {
@@ -701,7 +813,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       }
     });
 
-    // Escutar erros de dados (podem indicar token expirado)
     ref.listen<CompanyDataState>(companyDataProvider, (prev, next) {
       if (next.error != null && prev?.error != next.error) {
         final errorLower = next.error!.toLowerCase();
@@ -717,7 +828,6 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       }
     });
 
-    // Escutar erros do scanner
     ref.listen<BarcodeScannerState>(barcodeScannerProvider, (prev, next) {
       if (next.lastResult == BarcodeScanResult.notFound && next.error != null) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -863,15 +973,11 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ═══════════════════════════════════════════════════════════════════
-          // LOGO DA EMPRESA (em vez do nome em texto)
-          // ═══════════════════════════════════════════════════════════════════
           Image.asset(
             'assets/img/logo.png',
-            height: 40, // Altura do logo no AppBar
+            height: 40,
             fit: BoxFit.contain,
             errorBuilder: (context, error, stackTrace) {
-              // Fallback para texto se o logo não carregar
               return const Text('Loja da Madalena');
             },
           ),
@@ -891,16 +997,18 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       backgroundColor: Theme.of(context).colorScheme.primary,
       foregroundColor: Theme.of(context).colorScheme.onPrimary,
       actions: [
-        // Indicador do scanner (clicável para recuperar foco)
+        // ═══════════════════════════════════════════════════════════════════
+        // CHIP DO SCANNER
+        // ═══════════════════════════════════════════════════════════════════
         Tooltip(
           message: isScannerActive
-              ? 'Scanner activo - clique para verificar'
+              ? 'Scanner activo'
               : 'Scanner inactivo - clique para activar',
           child: InkWell(
             onTap: _requestScannerFocus,
             borderRadius: BorderRadius.circular(12),
             child: Container(
-              margin: const EdgeInsets.symmetric(horizontal: 8),
+              margin: const EdgeInsets.symmetric(horizontal: 4),
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
               decoration: BoxDecoration(
                 color: isScannerActive
@@ -915,28 +1023,74 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Icon(
-                    isScannerActive
-                        ? Icons.qr_code_scanner
-                        : Icons.qr_code_scanner,
+                  const Icon(
+                    Icons.qr_code_scanner,
                     size: 16,
                     color: Colors.white,
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    isScannerActive ? 'Scanner' : 'Scanner OFF',
+                    isScannerActive ? 'Scanner' : 'OFF',
                     style: const TextStyle(fontSize: 11, color: Colors.white),
                   ),
-                  if (!isScannerActive) ...[
-                    const SizedBox(width: 4),
-                    const Icon(Icons.touch_app,
-                        size: 12, color: Colors.white70,),
-                  ],
                 ],
               ),
             ),
           ),
         ),
+
+        // ═══════════════════════════════════════════════════════════════════
+        // CHIP DA BALANÇA
+        // ═══════════════════════════════════════════════════════════════════
+        Tooltip(
+          message: _scaleConnected
+              ? 'Balança conectada'
+              : 'Balança desconectada - clique para conectar',
+          child: InkWell(
+            onTap: _scaleConnected ? null : _connectScale,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: _scaleConnected
+                    ? Colors.teal.withOpacity(0.3)
+                    : Colors.orange.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: _scaleConnected ? Colors.teal : Colors.orange,
+                  width: 1.5,
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_scaleConnecting)
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  else
+                    Icon(
+                      _scaleConnected ? Icons.scale : Icons.scale_outlined,
+                      size: 16,
+                      color: Colors.white,
+                    ),
+                  const SizedBox(width: 4),
+                  Text(
+                    _scaleConnected ? 'Balança' : 'OFF',
+                    style: const TextStyle(fontSize: 11, color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
         // Botão recarregar dados
         IconButton(
           icon: const Icon(Icons.refresh),
@@ -971,8 +1125,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               ),
             ),
           ),
-          // BOTÃO FAVORITOS (NOVO)
-        // ═══════════════════════════════════════════════════════════════════
+        // BOTÃO FAVORITOS
         IconButton(
           icon: const Icon(Icons.star),
           onPressed: _openFavoritesScreen,
