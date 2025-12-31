@@ -22,6 +22,10 @@ on:
         default: true
         type: boolean
 
+# Permissões necessárias para criar releases
+permissions:
+  contents: write
+
 env:
   APP_NAME: POS Moloni
   APP_EXECUTABLE: pos_moloni_app.exe
@@ -36,7 +40,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # Garante que temos o código mais recente
           fetch-depth: 0
           clean: true
 
@@ -110,11 +113,10 @@ jobs:
         shell: pwsh
 
       # ============================================
-      # ANÁLISE (opcional mas útil)
+      # ANÁLISE
       # ============================================
       - name: Analyze code
         run: flutter analyze --no-fatal-infos
-        continue-on-error: true
 
       # ============================================
       # BUILD
