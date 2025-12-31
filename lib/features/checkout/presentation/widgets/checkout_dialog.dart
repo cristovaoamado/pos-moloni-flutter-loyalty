@@ -159,48 +159,21 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
     }
   }
 
-  /// Cancela o checkout e limpa o carrinho
-  Future<void> _cancelCheckout() async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Cancelar Venda?'),
-        content: const Text(
-          'Ao cancelar, todos os produtos do carrinho serão removidos.\n\n'
-          'Tem a certeza que pretende cancelar?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Voltar'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context, true),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red,
-              foregroundColor: Colors.white,
-            ),
-            child: const Text('Cancelar Venda'),
-          ),
-        ],
+  /// Cancela o checkout e limpa o carrinho (sem confirmação)
+  void _cancelCheckout() {
+    // Limpar o carrinho
+    ref.read(cartProvider.notifier).clearCart();
+    
+    // Fechar o diálogo
+    Navigator.of(context).pop(false);
+    
+    // Mostrar feedback
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Venda cancelada e carrinho limpo'),
+        backgroundColor: Colors.orange,
       ),
     );
-
-    if (confirm == true && mounted) {
-      // Limpar o carrinho
-      ref.read(cartProvider.notifier).clearCart();
-      
-      // Fechar o diálogo
-      Navigator.of(context).pop(false);
-      
-      // Mostrar feedback
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Venda cancelada e carrinho limpo'),
-          backgroundColor: Colors.orange,
-        ),
-      );
-    }
   }
 
   void _onAmountChanged(String value) {
@@ -248,7 +221,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
 
     return Dialog(
       child: Container(
-        width: 500,
+        width: 600,
         constraints: BoxConstraints(
           maxHeight: MediaQuery.of(context).size.height * 0.95,
         ),
@@ -541,23 +514,23 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
               ),
               child: Row(
                 children: [
-                  // Botão Cancelar - agora limpa o carrinho
-                  ElevatedButton.icon(
-                    onPressed: _isProcessing ? null : _cancelCheckout,
-                    icon: const Icon(Icons.delete_outline),
-                    label: const Text('Cancelar Venda'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red.shade100,
-                      foregroundColor: Colors.red.shade700,
-                    ),
-                  ),
-                  const Spacer(),
                   // Botão Voltar (só fecha o diálogo)
                   TextButton(
                     onPressed: _isProcessing ? null : () => Navigator.of(context).pop(false),
                     child: const Text('Voltar'),
                   ),
                   const SizedBox(width: 8),
+                  // Botão Cancelar - limpa o carrinho
+                  ElevatedButton.icon(
+                    onPressed: _isProcessing ? null : _cancelCheckout,
+                    icon: const Icon(Icons.delete_outline, size: 18),
+                    label: const Text('Cancelar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade100,
+                      foregroundColor: Colors.red.shade700,
+                    ),
+                  ),
+                  const Spacer(),
                   // Botão Finalizar
                   ElevatedButton.icon(
                     onPressed: _canFinalize && !_isProcessing ? _processPayment : null,
