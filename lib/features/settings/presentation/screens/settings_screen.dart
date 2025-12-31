@@ -368,17 +368,28 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
+        toolbarHeight: 70, // Altura maior do header
         title: const Text('Configurações'),
-        bottom: TabBar(
-          controller: _tabController,
-          isScrollable: false,
-          tabs: const [
-            Tab(icon: Icon(Icons.person), text: 'Geral'),
-            Tab(icon: Icon(Icons.api), text: 'API'),
-            Tab(icon: Icon(Icons.print), text: 'Impressora'),
-            Tab(icon: Icon(Icons.scale), text: 'Balança'),
-            Tab(icon: Icon(Icons.info), text: 'Sistema'),
-          ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(60),
+          child: Container(
+            color: const Color(0xFFD4A574), // Caramelo/Bege dourado (accent)
+            child: TabBar(
+              controller: _tabController,
+              isScrollable: false,
+              labelColor: Colors.black87,
+              unselectedLabelColor: Colors.black54,
+              indicatorColor: Theme.of(context).colorScheme.primary,
+              indicatorWeight: 3,
+              tabs: const [
+                Tab(icon: Icon(Icons.person), text: 'Geral'),
+                Tab(icon: Icon(Icons.api), text: 'API'),
+                Tab(icon: Icon(Icons.print), text: 'Impressora'),
+                Tab(icon: Icon(Icons.scale), text: 'Balança'),
+                Tab(icon: Icon(Icons.info), text: 'Sistema'),
+              ],
+            ),
+          ),
         ),
       ),
       body: _isLoading
@@ -1266,9 +1277,14 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
       _refreshPorts();
 
       final config = _scaleService.config;
+      
+      // Validar se a porta guardada existe na lista de portas disponíveis
+      final savedPort = config.serialPort;
+      final portExists = savedPort.isNotEmpty && _availablePorts.contains(savedPort);
+      
       setState(() {
         _isEnabled = config.serialPort.isNotEmpty;
-        _selectedPort = config.serialPort.isEmpty ? null : config.serialPort;
+        _selectedPort = portExists ? savedPort : null;
         _baudRate = config.baudRate;
         _protocol = config.protocol;
         _isLoading = false;
@@ -1450,7 +1466,7 @@ class _ScaleSettingsCardState extends State<_ScaleSettingsCard> {
                       )
                     else
                       DropdownButtonFormField<String>(
-                        value: _selectedPort,
+                        value: _availablePorts.contains(_selectedPort) ? _selectedPort : null,
                         decoration: const InputDecoration(
                           labelText: 'Selecionar Porta',
                           border: OutlineInputBorder(),
