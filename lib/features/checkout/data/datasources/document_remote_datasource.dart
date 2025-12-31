@@ -334,11 +334,52 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
       final products = <Map<String, dynamic>>[];
       for (final item in request.items) {
         final productTaxes = <Map<String, dynamic>>[];
+        
+        // Verificar se o produto tem IVA 0% (precisa de exemption_reason)
+        bool hasZeroTax = false;
+        String? exemptionReason;
+        
         for (final tax in item.product.taxes) {
           productTaxes.add({
             'tax_id': tax.id,
             'value': tax.value,
           });
+          
+          // Se IVA é 0%, marcar para adicionar exemption_reason
+          if (tax.value == 0 || tax.value == 0.0) {
+            hasZeroTax = true;
+            // Determinar o código de isenção baseado no nome do imposto
+            final taxNameLower = tax.name.toLowerCase();
+            if (taxNameLower.contains('m01')) {
+              exemptionReason = 'M01';
+            } else if (taxNameLower.contains('m02')) {
+              exemptionReason = 'M02';
+            } else if (taxNameLower.contains('m04')) {
+              exemptionReason = 'M04';
+            } else if (taxNameLower.contains('m05')) {
+              exemptionReason = 'M05';
+            } else if (taxNameLower.contains('m06')) {
+              exemptionReason = 'M06';
+            } else if (taxNameLower.contains('m07')) {
+              exemptionReason = 'M07';
+            } else if (taxNameLower.contains('m09')) {
+              exemptionReason = 'M09';
+            } else if (taxNameLower.contains('m10')) {
+              exemptionReason = 'M10-1';
+            } else if (taxNameLower.contains('m99')) {
+              exemptionReason = 'M99';
+            } else {
+              // Código padrão para isenções genéricas
+              // M07 = Isento artigo 9.º do CIVA (isenções nas operações internas)
+              exemptionReason = 'M07';
+            }
+          }
+        }
+        
+        // Se não tem impostos definidos, verificar se precisa de exemption_reason
+        if (item.product.taxes.isEmpty) {
+          hasZeroTax = true;
+          exemptionReason = 'M07'; // Código padrão
         }
         
         // DEBUG: Log detalhado dos preços
@@ -349,12 +390,15 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         AppLogger.d('   - item.customPrice: ${item.customPrice}');
         AppLogger.d('   - item.discount: ${item.discount}%');
         AppLogger.d('   - taxRate: ${item.taxRate}%');
+        if (hasZeroTax) {
+          AppLogger.d('   - exemption_reason: $exemptionReason (IVA 0%)');
+        }
         
         // Usar o preço SEM IVA (como a API Moloni espera)
         final priceToSend = double.parse(item.unitPrice.toStringAsFixed(4));
         AppLogger.d('   - priceToSend: $priceToSend');
         
-        products.add({
+        final productMap = <String, dynamic>{
           'product_id': item.product.id,
           'name': item.product.name,
           'reference': item.product.reference,
@@ -362,7 +406,14 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           'price': priceToSend,
           'discount': double.parse(item.discount.toStringAsFixed(2)),
           'taxes': productTaxes,
-        });
+        };
+        
+        // Adicionar exemption_reason se IVA for 0%
+        if (hasZeroTax && exemptionReason != null) {
+          productMap['exemption_reason'] = exemptionReason;
+        }
+        
+        products.add(productMap);
       }
 
       // Construir pagamentos
