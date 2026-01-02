@@ -339,17 +339,31 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         bool hasZeroTax = false;
         String? exemptionReason;
         
+        AppLogger.d('🔍 Analisando produto: ${item.product.name}');
+        AppLogger.d('   - Número de taxes: ${item.product.taxes.length}');
+        
         for (final tax in item.product.taxes) {
+          AppLogger.d('   - Tax: id=${tax.id}, name="${tax.name}", value=${tax.value}');
+          
           productTaxes.add({
             'tax_id': tax.id,
             'value': tax.value,
           });
           
           // Se IVA é 0%, marcar para adicionar exemption_reason
-          if (tax.value == 0 || tax.value == 0.0) {
+          // Usar comparação com tolerância para evitar problemas de floating point
+          final taxValue = tax.value;
+          if (taxValue == 0 || taxValue == 0.0 || taxValue.abs() < 0.001) {
             hasZeroTax = true;
+            
             // Determinar o código de isenção baseado no nome do imposto
-            final taxNameLower = tax.name.toLowerCase();
+            // Usar null-safe e verificar se name não é vazio
+            final taxName = tax.name;
+            final taxNameLower = (taxName.isNotEmpty) ? taxName.toLowerCase() : '';
+            
+            AppLogger.d('   - IVA 0% detectado! taxName="$taxName", taxNameLower="$taxNameLower"');
+            
+            // Procurar código de isenção no nome do imposto
             if (taxNameLower.contains('m01')) {
               exemptionReason = 'M01';
             } else if (taxNameLower.contains('m02')) {
@@ -366,13 +380,60 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
               exemptionReason = 'M09';
             } else if (taxNameLower.contains('m10')) {
               exemptionReason = 'M10-1';
+            } else if (taxNameLower.contains('m11')) {
+              exemptionReason = 'M11';
+            } else if (taxNameLower.contains('m12')) {
+              exemptionReason = 'M12';
+            } else if (taxNameLower.contains('m13')) {
+              exemptionReason = 'M13';
+            } else if (taxNameLower.contains('m14')) {
+              exemptionReason = 'M14';
+            } else if (taxNameLower.contains('m15')) {
+              exemptionReason = 'M15';
+            } else if (taxNameLower.contains('m16')) {
+              exemptionReason = 'M16';
+            } else if (taxNameLower.contains('m19')) {
+              exemptionReason = 'M19';
+            } else if (taxNameLower.contains('m20')) {
+              exemptionReason = 'M20';
+            } else if (taxNameLower.contains('m21')) {
+              exemptionReason = 'M21';
+            } else if (taxNameLower.contains('m25')) {
+              exemptionReason = 'M25';
+            } else if (taxNameLower.contains('m30')) {
+              exemptionReason = 'M30';
+            } else if (taxNameLower.contains('m31')) {
+              exemptionReason = 'M31';
+            } else if (taxNameLower.contains('m32')) {
+              exemptionReason = 'M32';
+            } else if (taxNameLower.contains('m33')) {
+              exemptionReason = 'M33';
+            } else if (taxNameLower.contains('m34')) {
+              exemptionReason = 'M34';
+            } else if (taxNameLower.contains('m40')) {
+              exemptionReason = 'M40';
+            } else if (taxNameLower.contains('m41')) {
+              exemptionReason = 'M41';
+            } else if (taxNameLower.contains('m42')) {
+              exemptionReason = 'M42';
+            } else if (taxNameLower.contains('m43')) {
+              exemptionReason = 'M43';
+            } else if (taxNameLower.contains('m44')) {
+              exemptionReason = 'M44';
+            } else if (taxNameLower.contains('m45')) {
+              exemptionReason = 'M45';
+            } else if (taxNameLower.contains('m46')) {
+              exemptionReason = 'M46';
             } else if (taxNameLower.contains('m99')) {
               exemptionReason = 'M99';
             } else {
               // Código padrão para isenções genéricas
               // M07 = Isento artigo 9.º do CIVA (isenções nas operações internas)
               exemptionReason = 'M07';
+              AppLogger.d('   - Usando código padrão M07');
             }
+            
+            AppLogger.d('   - exemption_reason determinado: $exemptionReason');
           }
         }
         
@@ -380,6 +441,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         if (item.product.taxes.isEmpty) {
           hasZeroTax = true;
           exemptionReason = 'M07'; // Código padrão
+          AppLogger.d('   - Produto sem impostos, usando exemption_reason padrão: M07');
         }
         
         // DEBUG: Log detalhado dos preços
@@ -390,9 +452,8 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         AppLogger.d('   - item.customPrice: ${item.customPrice}');
         AppLogger.d('   - item.discount: ${item.discount}%');
         AppLogger.d('   - taxRate: ${item.taxRate}%');
-        if (hasZeroTax) {
-          AppLogger.d('   - exemption_reason: $exemptionReason (IVA 0%)');
-        }
+        AppLogger.d('   - hasZeroTax: $hasZeroTax');
+        AppLogger.d('   - exemptionReason: $exemptionReason');
         
         // Usar o preço SEM IVA (como a API Moloni espera)
         final priceToSend = double.parse(item.unitPrice.toStringAsFixed(4));
@@ -411,6 +472,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         // Adicionar exemption_reason se IVA for 0%
         if (hasZeroTax && exemptionReason != null) {
           productMap['exemption_reason'] = exemptionReason;
+          AppLogger.i('✅ exemption_reason ADICIONADO ao produto ${item.product.name}: $exemptionReason');
         }
         
         products.add(productMap);
@@ -473,6 +535,19 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         'payments_count': request.payments.length,
         'global_discount': request.globalDiscount,
       },);
+
+      // Log detalhado de TODOS os produtos para debug
+      AppLogger.i('📋 === PRODUTOS A ENVIAR PARA API ===');
+      for (int i = 0; i < products.length; i++) {
+        final p = products[i];
+        AppLogger.i('   Produto $i: ${p['name']}');
+        AppLogger.i('      - product_id: ${p['product_id']}');
+        AppLogger.i('      - price: ${p['price']}');
+        AppLogger.i('      - qty: ${p['qty']}');
+        AppLogger.i('      - taxes: ${p['taxes']}');
+        AppLogger.i('      - exemption_reason: ${p['exemption_reason'] ?? "NÃO DEFINIDO"}');
+      }
+      AppLogger.i('📋 === FIM PRODUTOS ===');
 
       AppLogger.d('📤 Request URL: $url');
       AppLogger.d('📅 date value in body: "${jsonBody['date']}"');

@@ -13,6 +13,7 @@ import 'package:pos_moloni_app/features/printer/domain/entities/printer_config.d
 import 'package:pos_moloni_app/features/printer/presentation/providers/printer_provider.dart';
 import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
 import 'package:pos_moloni_app/features/scale/services/scale_service.dart';
+import 'package:pos_moloni_app/features/settings/presentation/screens/zero_tax_products_screen.dart';
 
 /// Ecrã de Configurações organizado por Tabs
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -45,7 +46,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 5, vsync: this);
+    _tabController = TabController(length: 6, vsync: this);
     _loadSettings();
   }
 
@@ -376,7 +377,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
             color: const Color(0xFFD4A574), // Caramelo/Bege dourado (accent)
             child: TabBar(
               controller: _tabController,
-              isScrollable: false,
+              isScrollable: true,
               labelColor: Colors.black87,
               unselectedLabelColor: Colors.black54,
               indicatorColor: Theme.of(context).colorScheme.primary,
@@ -386,6 +387,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 Tab(icon: Icon(Icons.api), text: 'API'),
                 Tab(icon: Icon(Icons.print), text: 'Impressora'),
                 Tab(icon: Icon(Icons.scale), text: 'Balança'),
+                Tab(icon: Icon(Icons.bug_report), text: 'Diagnóstico'),
                 Tab(icon: Icon(Icons.info), text: 'Sistema'),
               ],
             ),
@@ -401,6 +403,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 _buildApiTab(),
                 _buildPrinterTab(),
                 _buildScaleTab(),
+                _buildDiagnosticTab(),
                 _buildSystemTab(),
               ],
             ),
@@ -671,7 +674,221 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // TAB 5: SISTEMA - Informações e Reset
+  // TAB 5: DIAGNÓSTICO - Ferramentas de diagnóstico
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildDiagnosticTab() {
+    final productState = ref.watch(productProvider);
+    
+    // Contar produtos com IVA 0% ou sem IVA
+    int zeroTaxCount = 0;
+    int noTaxCount = 0;
+    
+    for (final product in productState.products) {
+      if (product.taxes.isEmpty) {
+        noTaxCount++;
+      } else {
+        for (final tax in product.taxes) {
+          if (tax.value == 0 || tax.value == 0.0) {
+            zeroTaxCount++;
+            break;
+          }
+        }
+      }
+    }
+    
+    final totalProblematic = zeroTaxCount + noTaxCount;
+    
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildSectionHeader('Produtos', Icons.inventory_2),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: totalProblematic > 0 
+                          ? Colors.orange.withOpacity(0.2) 
+                          : Colors.green.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Icon(
+                      totalProblematic > 0 ? Icons.warning_amber : Icons.check_circle,
+                      color: totalProblematic > 0 ? Colors.orange : Colors.green,
+                    ),
+                  ),
+                  title: const Text('Produtos sem IVA / IVA 0%'),
+                  subtitle: Text(
+                    totalProblematic > 0
+                        ? '$totalProblematic produto(s) precisam de atenção'
+                        : 'Todos os produtos têm IVA configurado',
+                  ),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (totalProblematic > 0)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.orange,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: Text(
+                            totalProblematic.toString(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      const SizedBox(width: 8),
+                      const Icon(Icons.chevron_right),
+                    ],
+                  ),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ZeroTaxProductsScreen(),
+                      ),
+                    );
+                  },
+                ),
+                if (totalProblematic > 0) ...[
+                  const Divider(height: 1),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: _buildDiagnosticChip(
+                            label: 'IVA 0%',
+                            count: zeroTaxCount,
+                            color: Colors.orange,
+                            icon: Icons.percent,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: _buildDiagnosticChip(
+                            label: 'Sem IVA',
+                            count: noTaxCount,
+                            color: Colors.red,
+                            icon: Icons.warning_amber,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 24),
+          
+          // Info sobre códigos de isenção
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: Colors.blue.withOpacity(0.3)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Row(
+                  children: [
+                    Icon(Icons.lightbulb_outline, color: Colors.blue),
+                    SizedBox(width: 8),
+                    Text(
+                      'Códigos de Isenção (exemption_reason)',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue,
+                      ),
+                    ),
+                  ],
+                ),
+                SizedBox(height: 12),
+                Text(
+                  'Produtos com IVA 0% precisam de um código de isenção para serem facturados. '
+                  'O sistema usa automaticamente o código M07 (Isento art. 9.º CIVA) quando não especificado.',
+                  style: TextStyle(fontSize: 13),
+                ),
+                SizedBox(height: 8),
+                Text(
+                  'Códigos comuns em Portugal:\n'
+                  '• M07 - Isento artigo 9.º do CIVA\n'
+                  '• M01 - Artigo 16.º n.º 6 do CIVA\n'
+                  '• M99 - Não sujeito; não tributado',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontFamily: 'monospace',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiagnosticChip({
+    required String label,
+    required int count,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              count.toString(),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TAB 6: SISTEMA - Informações e Reset
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildSystemTab() {
