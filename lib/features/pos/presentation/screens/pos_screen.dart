@@ -26,6 +26,9 @@ import 'package:pos_moloni_app/features/pos/presentation/widgets/item_options_di
 import 'package:pos_moloni_app/features/pos/presentation/widgets/customer_search_dialog.dart';
 import 'package:pos_moloni_app/features/favorites/presentation/screens/favorites_screen.dart';
 
+// LOYALTY
+import 'package:pos_moloni_app/features/loyalty/loyalty.dart';
+
 /// Tela Principal do POS
 class PosScreen extends ConsumerStatefulWidget {
   const PosScreen({super.key});
@@ -936,6 +939,15 @@ class _PosScreenState extends ConsumerState<PosScreen> {
 
     if (barcode.length >= 3) {
       AppLogger.i('📦 Barcode detectado: $barcode');
+      
+      // LOYALTY: Verificar se é cartão de fidelização (prefixo 269)
+      final loyaltyState = ref.read(loyaltyProvider);
+      if (loyaltyState.isEnabled && loyaltyState.isLoyaltyCard(barcode)) {
+        AppLogger.i('💳 Cartão fidelização detectado: $barcode');
+        ref.read(loyaltyProvider.notifier).identifyCustomerByBarcode(barcode);
+        return; // Não procurar como produto
+      }
+      
       ref.read(barcodeScannerProvider.notifier).processBarcode(barcode);
     }
   }
@@ -973,6 +985,7 @@ class _PosScreenState extends ConsumerState<PosScreen> {
       title: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
+          // LOGO
           Image.asset(
             'assets/img/logo.png',
             height: 40,
@@ -992,6 +1005,14 @@ class _PosScreenState extends ConsumerState<PosScreen> {
               ),
             ),
           ],
+          const SizedBox(width: 16),
+          // ═══════════════════════════════════════════════════════════════════
+          // CHIP CARTÃO DE CLIENTE (junto ao logo)
+          // ═══════════════════════════════════════════════════════════════════
+          LoyaltyChipWidget(
+            onTap: () => showLoyaltySearchDialog(context),
+            onClear: () => ref.read(loyaltyProvider.notifier).clearCustomer(),
+          ),
         ],
       ),
       backgroundColor: Theme.of(context).colorScheme.primary,
@@ -1091,6 +1112,22 @@ class _PosScreenState extends ConsumerState<PosScreen> {
           ),
         ),
 
+        // BOTÃO FAVORITOS
+        IconButton(
+          icon: const Icon(Icons.star),
+          onPressed: _openFavoritesScreen,
+          tooltip: 'Gerir Favoritos',
+        ),
+
+        // Botão definições
+        IconButton(
+          icon: const Icon(Icons.settings),
+          onPressed: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const SettingsScreen()),
+          ),
+          tooltip: 'Configurações',
+        ),
+
         // Botão recarregar dados
         IconButton(
           icon: const Icon(Icons.refresh),
@@ -1101,44 +1138,32 @@ class _PosScreenState extends ConsumerState<PosScreen> {
                 },
           tooltip: 'Recarregar dados',
         ),
-        // Utilizador actual
+
+        // ═══════════════════════════════════════════════════════════════════
+        // CHIP DO UTILIZADOR (apenas icon, estilo igual ao scanner ON)
+        // ═══════════════════════════════════════════════════════════════════
         if (user != null)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Center(
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.2),
-                  borderRadius: BorderRadius.circular(20),
+          Tooltip(
+            message: user.displayName,
+            child: Container(
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: Colors.green.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: Colors.green,
+                  width: 1.5,
                 ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.person, size: 16),
-                    const SizedBox(width: 6),
-                    Text(user.displayName,
-                        style: const TextStyle(fontSize: 13),),
-                  ],
-                ),
+              ),
+              child: const Icon(
+                Icons.person,
+                size: 16,
+                color: Colors.white,
               ),
             ),
           ),
-        // BOTÃO FAVORITOS
-        IconButton(
-          icon: const Icon(Icons.star),
-          onPressed: _openFavoritesScreen,
-          tooltip: 'Gerir Favoritos',
-        ),
-        // Botão definições
-        IconButton(
-          icon: const Icon(Icons.settings),
-          onPressed: () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const SettingsScreen()),
-          ),
-          tooltip: 'Configurações',
-        ),
+
         // Botão logout
         IconButton(
           icon: const Icon(Icons.logout),

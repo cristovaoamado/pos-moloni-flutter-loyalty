@@ -6,6 +6,7 @@ import 'package:pos_moloni_app/features/checkout/domain/entities/document.dart';
 import 'package:pos_moloni_app/features/checkout/presentation/providers/checkout_provider.dart';
 import 'package:pos_moloni_app/features/checkout/services/print_service.dart';
 import 'package:pos_moloni_app/features/printer/presentation/providers/printer_provider.dart';
+import 'package:pos_moloni_app/features/loyalty/data/models/sale_models.dart';
 
 /// Diálogo de sucesso após checkout
 class CheckoutSuccessDialog extends ConsumerStatefulWidget {
@@ -14,15 +15,16 @@ class CheckoutSuccessDialog extends ConsumerStatefulWidget {
     required this.document,
     required this.change,
     required this.onClose,
+    this.loyaltySaleResult,
   });
 
   final Document document;
   final double change;
   final VoidCallback onClose;
+  final RegisterSaleResult? loyaltySaleResult;
 
   @override
-  ConsumerState<CheckoutSuccessDialog> createState() =>
-      _CheckoutSuccessDialogState();
+  ConsumerState<CheckoutSuccessDialog> createState() => _CheckoutSuccessDialogState();
 }
 
 class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
@@ -34,13 +36,11 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
   @override
   void initState() {
     super.initState();
-    // Auto-print se configurado
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _checkAutoPrint();
     });
   }
 
-  /// Verifica se deve imprimir automaticamente
   void _checkAutoPrint() {
     final printerState = ref.read(printerProvider);
     final checkoutState = ref.read(checkoutProvider);
@@ -53,7 +53,6 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     }
   }
 
-  /// Imprime directamente para a impressora configurada (silenciosamente)
   Future<void> _printDocument() async {
     final checkoutState = ref.read(checkoutProvider);
     final printerState = ref.read(printerProvider);
@@ -74,11 +73,8 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     try {
       bool success = false;
 
-      // Verificar se há impressora configurada
       if (printerState.config.isEnabled && printerState.config.isConfigured) {
-        // Imprimir directamente na impressora configurada (silencioso)
-        AppLogger.i(
-            '🖨️ Imprimindo directamente em: ${printerState.config.name}',);
+        AppLogger.i('🖨️ Imprimindo directamente em: ${printerState.config.name}');
 
         success = await PrintService.printDirectToConfiguredPrinter(
           checkoutState.pdfBytes!,
@@ -88,14 +84,11 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
 
         if (success) {
           setState(() {
-            _printMessage =
-                'Documento enviado para ${printerState.config.name}';
+            _printMessage = 'Documento enviado para ${printerState.config.name}';
             _printSuccess = true;
           });
         } else {
-          // Se falhar na impressora configurada, tentar com diálogo
-          AppLogger.w(
-              '⚠️ Falhou na impressora configurada, a abrir diálogo...',);
+          AppLogger.w('⚠️ Falhou na impressora configurada, a abrir diálogo...');
           success = await PrintService.printPdfWithDialog(
             checkoutState.pdfBytes!,
             documentName: widget.document.number,
@@ -109,7 +102,6 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
           }
         }
       } else {
-        // Sem impressora configurada - abrir diálogo de selecção
         AppLogger.i('🖨️ Sem impressora configurada, a abrir diálogo...');
         success = await PrintService.printPdfWithDialog(
           checkoutState.pdfBytes!,
@@ -186,14 +178,14 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     final checkoutState = ref.watch(checkoutProvider);
     final printerState = ref.watch(printerProvider);
     final hasPdf = checkoutState.pdfBytes != null;
-    final hasPrinterConfigured =
-        printerState.config.isEnabled && printerState.config.isConfigured;
+    final hasPrinterConfigured = printerState.config.isEnabled && printerState.config.isConfigured;
+    final hasLoyalty = widget.loyaltySaleResult != null;
 
     return Dialog(
       child: Container(
-        width: 400,
+        width: 450,
         constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
+          maxHeight: MediaQuery.of(context).size.height * 0.90,
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -202,9 +194,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(24),
-              decoration: const BoxDecoration(
-                color: Colors.green,
-              ),
+              decoration: const BoxDecoration(color: Colors.green),
               child: Column(
                 children: [
                   Container(
@@ -213,20 +203,12 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                       color: Colors.white,
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(
-                      Icons.check,
-                      color: Colors.green,
-                      size: 48,
-                    ),
+                    child: const Icon(Icons.check, color: Colors.green, size: 48),
                   ),
                   const SizedBox(height: 16),
                   const Text(
                     'Venda Concluída!',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                    ),
+                    style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                 ],
               ),
@@ -238,71 +220,168 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                 padding: const EdgeInsets.all(24),
                 child: Column(
                   children: [
-                    // Número do documento
+                    // Número do documento e Total lado a lado
                     Container(
                       width: double.infinity,
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: Theme.of(context)
-                            .colorScheme
-                            .surfaceContainerHighest,
+                        color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Column(
+                      child: Row(
                         children: [
-                          Text(
-                            'Documento',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
-                              fontSize: 12,
+                          // Documento
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.receipt, size: 16, color: Theme.of(context).colorScheme.outline),
+                                    const SizedBox(width: 6),
+                                    Text('Documento', style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12)),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(widget.document.number, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                Text(widget.document.formattedDate, style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12)),
+                              ],
                             ),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.document.number,
-                            style: const TextStyle(
-                              fontSize: 20,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          // Separador vertical
+                          Container(
+                            height: 50,
+                            width: 1,
+                            color: Theme.of(context).dividerColor,
+                            margin: const EdgeInsets.symmetric(horizontal: 16),
                           ),
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.document.formattedDate,
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
+                          // Total
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.end,
+                                  children: [
+                                    Text('Total', style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12)),
+                                    const SizedBox(width: 6),
+                                    Icon(Icons.euro, size: 16, color: Theme.of(context).colorScheme.outline),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(widget.document.formattedTotal, 
+                                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Theme.of(context).colorScheme.primary)),
+                              ],
                             ),
                           ),
                         ],
                       ),
                     ),
 
-                    const SizedBox(height: 16),
-
-                    // Total e troco
-                    Row(
-                      children: [
-                        Expanded(
-                          child: _buildInfoCard(
-                            context,
-                            'Total',
-                            widget.document.formattedTotal,
-                            Icons.receipt,
-                          ),
+                    // Troco (se houver)
+                    if (widget.change > 0) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.green.shade200),
                         ),
-                        if (widget.change > 0) ...[
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: _buildInfoCard(
-                              context,
-                              'Troco',
-                              '${widget.change.toStringAsFixed(2)} €',
-                              Icons.money,
-                              color: Colors.green,
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(Icons.money, color: Colors.green.shade700, size: 20),
+                            const SizedBox(width: 8),
+                            Text('Troco: ', style: TextStyle(color: Colors.green.shade700, fontSize: 14)),
+                            Text('${widget.change.toStringAsFixed(2)} €', 
+                                style: TextStyle(color: Colors.green.shade700, fontSize: 18, fontWeight: FontWeight.bold)),
+                          ],
+                        ),
+                      ),
+                    ],
+
+                    // ═══════════════════════════════════════════════════════════
+                    // LOYALTY: Info de pontos
+                    // ═══════════════════════════════════════════════════════════
+                    if (hasLoyalty) ...[
+                      const SizedBox(height: 16),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Icon(Icons.loyalty, color: Colors.blue.shade700, size: 20),
+                                const SizedBox(width: 8),
+                                Text(
+                                  'Fidelização',
+                                  style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blue.shade700),
+                                ),
+                                if (widget.loyaltySaleResult!.customerName != null) ...[
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '- ${widget.loyaltySaleResult!.customerName}',
+                                    style: TextStyle(color: Colors.blue.shade600, fontSize: 13),
+                                  ),
+                                ],
+                              ],
                             ),
-                          ),
-                        ],
-                      ],
-                    ),
+                            const SizedBox(height: 12),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceAround,
+                              children: [
+                                if (widget.loyaltySaleResult!.pointsEarned > 0)
+                                  _buildLoyaltyChip(
+                                    icon: Icons.add_circle,
+                                    color: Colors.green,
+                                    label: '+${widget.loyaltySaleResult!.pointsEarned}',
+                                    sublabel: 'ganhos',
+                                  ),
+                                if (widget.loyaltySaleResult!.pointsRedeemed > 0)
+                                  _buildLoyaltyChip(
+                                    icon: Icons.remove_circle,
+                                    color: Colors.orange,
+                                    label: '-${widget.loyaltySaleResult!.pointsRedeemed}',
+                                    sublabel: 'usados',
+                                  ),
+                                if (widget.loyaltySaleResult!.newPointsBalance != null)
+                                  _buildLoyaltyChip(
+                                    icon: Icons.account_balance_wallet,
+                                    color: Colors.blue,
+                                    label: '${widget.loyaltySaleResult!.newPointsBalance}',
+                                    sublabel: 'saldo',
+                                  ),
+                              ],
+                            ),
+                            if (widget.loyaltySaleResult!.discountApplied > 0) ...[
+                              const SizedBox(height: 8),
+                              Center(
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade100,
+                                    borderRadius: BorderRadius.circular(16),
+                                  ),
+                                  child: Text(
+                                    'Desconto: ${widget.loyaltySaleResult!.discountApplied.toStringAsFixed(2)} €',
+                                    style: TextStyle(color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 20),
 
@@ -310,8 +389,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                     if (hasPrinterConfigured) ...[
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 8,),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
                           color: Colors.blue.shade50,
                           borderRadius: BorderRadius.circular(6),
@@ -319,35 +397,23 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                         ),
                         child: Row(
                           children: [
-                            Icon(Icons.print,
-                                size: 16, color: Colors.blue.shade700,),
+                            Icon(Icons.print, size: 16, color: Colors.blue.shade700),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 'Impressora: ${printerState.config.name}',
-                                style: TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.blue.shade700,
-                                ),
+                                style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
                             if (printerState.config.autoPrint)
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 6, vertical: 2,),
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
                                   color: Colors.blue.shade700,
                                   borderRadius: BorderRadius.circular(4),
                                 ),
-                                child: const Text(
-                                  'AUTO',
-                                  style: TextStyle(
-                                    fontSize: 9,
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
+                                child: const Text('AUTO', style: TextStyle(fontSize: 9, color: Colors.white, fontWeight: FontWeight.bold)),
                               ),
                           ],
                         ),
@@ -358,51 +424,29 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                     // Botões de ação
                     Row(
                       children: [
-                        // Botão de imprimir
                         Expanded(
                           child: ElevatedButton.icon(
-                            onPressed:
-                                hasPdf && !_isPrinting ? _printDocument : null,
+                            onPressed: hasPdf && !_isPrinting ? _printDocument : null,
                             icon: _isPrinting
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
                                 : const Icon(Icons.print),
-                            label: Text(_isPrinting
-                                ? 'A imprimir...'
-                                : hasPrinterConfigured
-                                    ? 'Imprimir'
-                                    : 'Imprimir...',),
+                            label: Text(_isPrinting ? 'A imprimir...' : hasPrinterConfigured ? 'Imprimir' : 'Imprimir...'),
                             style: ElevatedButton.styleFrom(
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.primary,
+                              backgroundColor: Theme.of(context).colorScheme.primary,
                               foregroundColor: Colors.white,
                               padding: const EdgeInsets.symmetric(vertical: 14),
                             ),
                           ),
                         ),
                         const SizedBox(width: 12),
-                        // Botão de ver PDF
                         Expanded(
                           child: OutlinedButton.icon(
                             onPressed: hasPdf && !_isOpening ? _openPdf : null,
                             icon: _isOpening
-                                ? const SizedBox(
-                                    width: 18,
-                                    height: 18,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2,),
-                                  )
+                                ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                                 : const Icon(Icons.visibility),
                             label: Text(_isOpening ? 'A abrir...' : 'Ver PDF'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                            ),
+                            style: OutlinedButton.styleFrom(padding: const EdgeInsets.symmetric(vertical: 14)),
                           ),
                         ),
                       ],
@@ -414,19 +458,9 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
+                          const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2)),
                           const SizedBox(width: 8),
-                          Text(
-                            'A carregar PDF...',
-                            style: TextStyle(
-                              color: Theme.of(context).colorScheme.outline,
-                              fontSize: 12,
-                            ),
-                          ),
+                          Text('A carregar PDF...', style: TextStyle(color: Theme.of(context).colorScheme.outline, fontSize: 12)),
                         ],
                       ),
                     ],
@@ -437,37 +471,22 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _printSuccess
-                              ? Colors.green.shade50
-                              : Colors.orange.shade50,
+                          color: _printSuccess ? Colors.green.shade50 : Colors.orange.shade50,
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(
-                            color: _printSuccess
-                                ? Colors.green.shade200
-                                : Colors.orange.shade200,
-                          ),
+                          border: Border.all(color: _printSuccess ? Colors.green.shade200 : Colors.orange.shade200),
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              _printSuccess
-                                  ? Icons.check_circle
-                                  : Icons.warning_amber,
-                              color: _printSuccess
-                                  ? Colors.green.shade700
-                                  : Colors.orange.shade700,
+                              _printSuccess ? Icons.check_circle : Icons.warning_amber,
+                              color: _printSuccess ? Colors.green.shade700 : Colors.orange.shade700,
                               size: 18,
                             ),
                             const SizedBox(width: 8),
                             Expanded(
                               child: Text(
                                 _printMessage!,
-                                style: TextStyle(
-                                  color: _printSuccess
-                                      ? Colors.green.shade700
-                                      : Colors.orange.shade700,
-                                  fontSize: 12,
-                                ),
+                                style: TextStyle(color: _printSuccess ? Colors.green.shade700 : Colors.orange.shade700, fontSize: 12),
                               ),
                             ),
                           ],
@@ -483,11 +502,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: Theme.of(context).dividerColor),
-                ),
-              ),
+              decoration: BoxDecoration(border: Border(top: BorderSide(color: Theme.of(context).dividerColor))),
               child: ElevatedButton(
                 onPressed: widget.onClose,
                 style: ElevatedButton.styleFrom(
@@ -495,10 +510,7 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
                 ),
-                child: const Text(
-                  'Nova Venda',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                ),
+                child: const Text('Nova Venda', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
               ),
             ),
           ],
@@ -507,45 +519,15 @@ class _CheckoutSuccessDialogState extends ConsumerState<CheckoutSuccessDialog> {
     );
   }
 
-  Widget _buildInfoCard(
-    BuildContext context,
-    String label,
-    String value,
-    IconData icon, {
-    Color? color,
-  }) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: (color ?? Theme.of(context).colorScheme.primary)
-            .withOpacity(0.1),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: [
-          Icon(
-            icon,
-            color: color ?? Theme.of(context).colorScheme.primary,
-            size: 20,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: Theme.of(context).colorScheme.outline,
-              fontSize: 11,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            value,
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              color: color ?? Theme.of(context).colorScheme.primary,
-            ),
-          ),
-        ],
-      ),
+  Widget _buildLoyaltyChip({required IconData icon, required Color color, required String label, required String sublabel}) {
+    return Column(
+      children: [
+        Icon(icon, color: color, size: 24),
+        const SizedBox(height: 4),
+        Text(label, style: TextStyle(fontWeight: FontWeight.bold, color: color, fontSize: 16)),
+        Text(sublabel, style: TextStyle(color: Colors.grey.shade600, fontSize: 11)),
+      ],
     );
   }
+
 }

@@ -195,6 +195,31 @@ class _ProductDiscountInfo {
   final double discountValue;
 }
 
+/// Dados de fidelização para o talão
+class LoyaltyReceiptData {
+  const LoyaltyReceiptData({
+    required this.cardNumber,
+    this.previousBalance,
+    required this.pointsEarned,
+    required this.pointsRedeemed,
+    required this.newBalance,
+    required this.discountApplied,
+    this.customerName,
+    this.tierName,
+  });
+  
+  final String cardNumber;
+  final int? previousBalance;
+  final int pointsEarned;
+  final int pointsRedeemed;
+  final int newBalance;
+  final double discountApplied;
+  final String? customerName;
+  final String? tierName;
+  
+  bool get hasActivity => pointsEarned > 0 || pointsRedeemed > 0;
+}
+
 /// Gerador de talões POS - Formato Moloni
 /// 
 /// IMPORTANTE: Este gerador usa EXCLUSIVAMENTE os valores retornados pela 
@@ -212,6 +237,7 @@ class ReceiptGenerator {
   Future<Uint8List> generateFromDocument({
     required Document document,
     required String documentTypeName,
+    LoyaltyReceiptData? loyaltyData,
   }) async {
     // Log dos valores do documento (todos da API Moloni)
     AppLogger.d('═══════════════════════════════════════════════════════════');
@@ -273,6 +299,30 @@ class ReceiptGenerator {
     
     // Calcular valor bruto total (antes de descontos)
     final grossBeforeDiscounts = _calculateGrossBeforeDiscounts(document.products);
+    
+    // ═══════════════════════════════════════════════════════════
+    // CÁLCULOS DO RESUMO DA FATURA
+    // Nota: document.netValue já vem com desconto aplicado, precisamos recalcular
+    // ═══════════════════════════════════════════════════════════
+    
+    // Total Ilíquido = soma dos totais dos produtos (sem IVA)
+    final totalIliquido = document.products.fold<double>(
+      0, (sum, p) => sum + p.total,
+    );
+    
+    // Total IVA = soma dos taxValue dos produtos
+    final totalIva = document.products.fold<double>(
+      0, (sum, p) => sum + p.taxValue,
+    );
+    
+    // Total do documento = Total Ilíquido + Total IVA (antes do desconto financeiro)
+    final totalDocumento = totalIliquido + totalIva;
+    
+    // Desconto Financeiro (special_discount dos pontos)
+    final descontoFinanceiro = document.deductionValue;
+    
+    // Total Pago = grossValue (já vem correcto da API)
+    final totalPago = document.grossValue;
 
     // Estilos (com fonte TTF para suporte ao símbolo €)
     final headerStyle = pw.TextStyle(font: ttfBold, fontSize: 9, fontWeight: pw.FontWeight.bold);
@@ -377,24 +427,41 @@ class ReceiptGenerator {
               pw.SizedBox(height: 6),
 
               // ═══════════════════════════════════════════════════════════
-              // RESUMO DA FATURA (logo após artigos)
+              // RESUMO DA FATURA (formato Moloni)
+              // Total Ilíq. | IVAs | Total documento | Desc. Financeiro | Total Pago
               // ═══════════════════════════════════════════════════════════
-              _buildTotalRow('Total Ilíquido:', document.grossValue, normalStyle),
+              
+              // Total Ilíquido
+              _buildTotalRow('Total Ilíq.:', totalIliquido, normalStyle),
               pw.SizedBox(height: 2),
               
               // IVAs discriminados por taxa
               ...taxSummaries.map((tax) => _buildTotalRow(
-                '${tax.displayName} ${tax.rate.toStringAsFixed(0)}%:',
+                '${tax.displayName}:',
                 tax.taxValue,
                 smallStyle,
               ),),
+              
+              pw.SizedBox(height: 4),
+              _buildThinLine(),
+              pw.SizedBox(height: 4),
+              
+              // Total do documento (antes de desconto financeiro)
+              _buildTotalRow('Total do documento:', totalDocumento, normalStyle),
+              pw.SizedBox(height: 2),
+              
+              // Desconto Financeiro (special_discount dos pontos) se existir
+              if (descontoFinanceiro > 0) ...[
+                _buildTotalRow('Desconto Financeiro:', descontoFinanceiro, discountStyle),
+                pw.SizedBox(height: 2),
+              ],
               
               pw.SizedBox(height: 4),
               
               // Total a pagar (destaque)
               pw.Container(
                 padding: const pw.EdgeInsets.symmetric(vertical: 4),
-                child: _buildTotalRow('TOTAL:', document.grossValue, totalStyle),
+                child: _buildTotalRow('TOTAL PAGO:', totalPago, totalStyle),
               ),
               
               pw.SizedBox(height: 6),
@@ -449,10 +516,10 @@ class ReceiptGenerator {
                   pw.SizedBox(height: 4),
                 ],
                 
-                // Desconto global (financeiro)
-                if (document.hasGlobalDiscount) ...[
+                // Desconto Financeiro (pontos de fidelização)
+                if (document.deductionValue > 0) ...[
                   _buildDiscountDetailRow(
-                    'Desconto Global (${document.deductionPercentage.toStringAsFixed(0)}%):',
+                    'Desconto Financeiro:',
                     document.deductionValue,
                     discountStyle,
                     isNegative: true,
@@ -546,6 +613,67 @@ class ReceiptGenerator {
                     ],
                   ),
                 ),),
+                pw.SizedBox(height: 6),
+                _buildDashedLine(),
+                pw.SizedBox(height: 6),
+              ],
+
+              // ═══════════════════════════════════════════════════════════
+              // CARTÃO CLIENTE (Fidelização)
+              // ═══════════════════════════════════════════════════════════
+              if (loyaltyData != null) ...[
+                pw.Center(
+                  child: pw.Text('──────── CARTÃO CLIENTE ────────', style: smallStyle),
+                ),
+                pw.SizedBox(height: 6),
+                
+                // Número do cartão
+                pw.Center(
+                  child: pw.Text('Cartão: ${loyaltyData.cardNumber}', style: normalStyle),
+                ),
+                pw.SizedBox(height: 4),
+                
+                // Código de barras do cartão
+                pw.Center(
+                  child: pw.BarcodeWidget(
+                    barcode: pw.Barcode.code128(),
+                    data: loyaltyData.cardNumber,
+                    width: 140,
+                    height: 35,
+                    drawText: false,
+                  ),
+                ),
+                pw.SizedBox(height: 6),
+                
+                // Resumo de pontos numa linha
+                if (loyaltyData.hasActivity) ...[
+                  pw.Row(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      if (loyaltyData.pointsEarned > 0)
+                        pw.Text('+${loyaltyData.pointsEarned} pts ganhos', style: smallStyle),
+                      if (loyaltyData.pointsEarned > 0 && loyaltyData.pointsRedeemed > 0)
+                        pw.Text(' | ', style: smallStyle),
+                      if (loyaltyData.pointsRedeemed > 0)
+                        pw.Text('-${loyaltyData.pointsRedeemed} pts usados', style: smallStyle),
+                    ],
+                  ),
+                  pw.SizedBox(height: 2),
+                ],
+                
+                // Saldo e desconto
+                pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.center,
+                  children: [
+                    pw.Text('Saldo: ${loyaltyData.newBalance} pts', style: normalStyle),
+                    if (loyaltyData.discountApplied > 0) ...[
+                      pw.Text(' | ', style: smallStyle),
+                      pw.Text('Poupou: ${loyaltyData.discountApplied.toStringAsFixed(2)}€', 
+                          style: pw.TextStyle(font: ttfBold, fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800)),
+                    ],
+                  ],
+                ),
+                
                 pw.SizedBox(height: 6),
                 _buildDashedLine(),
                 pw.SizedBox(height: 6),

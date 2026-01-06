@@ -117,6 +117,8 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   /// Processa o checkout
   /// [globalDiscount] - Percentagem do desconto global (0-100)
   /// [globalDiscountValue] - Valor do desconto global em EUR
+  /// [specialDiscount] - Desconto especial em EUR (pontos de fidelização)
+  /// [loyaltyData] - Dados de fidelização para o talão
   Future<bool> processCheckout({
     required DocumentTypeOption documentTypeOption,
     required Customer customer,
@@ -125,6 +127,8 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     String? notes,
     double globalDiscount = 0,
     double globalDiscountValue = 0,
+    double specialDiscount = 0,
+    LoyaltyReceiptData? loyaltyData,
   }) async {
     AppLogger.i('🛒 Iniciando checkout...');
     AppLogger.d('   - Tipo: ${documentTypeOption.displayName}');
@@ -132,6 +136,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     AppLogger.d('   - Items: ${items.length}');
     AppLogger.d('   - Pagamentos: ${payments.length}');
     AppLogger.d('   - Desconto Global: $globalDiscount% = $globalDiscountValue EUR');
+    AppLogger.d('   - Desconto Especial (Pontos): $specialDiscount EUR');
 
     state = state.copyWith(
       status: CheckoutStatus.processing,
@@ -146,7 +151,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
     );
 
     try {
-      // Criar documento (com desconto global)
+      // Criar documento (com descontos)
       final request = CreateDocumentRequest(
         documentTypeOption: documentTypeOption,
         customer: customer,
@@ -154,7 +159,8 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
         payments: payments,
         notes: notes,
         status: 1, // Fechado
-        globalDiscount: globalDiscount, // Passa desconto global para a API Moloni
+        globalDiscount: globalDiscount, // Desconto global em percentagem
+        specialDiscount: specialDiscount, // Desconto especial em EUR (pontos fidelização)
       );
 
       final document = await _dataSource.createDocument(request);
@@ -170,6 +176,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       _generateReceipt(
         document, 
         documentTypeOption.displayName,
+        loyaltyData: loyaltyData,
       );
 
       return true;
@@ -190,13 +197,20 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
   /// NOTA: Os valores de desconto já vêm incluídos no Document (da API Moloni)
   Future<void> _generateReceipt(
     Document document, 
-    String documentTypeName,
-  ) async {
+    String documentTypeName, {
+    LoyaltyReceiptData? loyaltyData,
+  }) async {
     try {
       AppLogger.d('A gerar talao POS...');
       AppLogger.d('   - Documento: ${document.number}');
       AppLogger.d('   - Desconto comercial: ${document.comercialDiscountValue} EUR');
       AppLogger.d('   - Desconto global: ${document.deductionPercentage}% = ${document.deductionValue} EUR');
+      if (loyaltyData != null) {
+        AppLogger.d('   - Cartão Cliente: ${loyaltyData.cardNumber}');
+        AppLogger.d('   - Pontos ganhos: ${loyaltyData.pointsEarned}');
+        AppLogger.d('   - Pontos usados: ${loyaltyData.pointsRedeemed}');
+        AppLogger.d('   - Desconto Loyalty: ${loyaltyData.discountApplied} EUR');
+      }
       
       // Carregar dados da empresa
       final companyData = await CompanyReceiptData.fromStorage(PlatformStorage.instance);
@@ -218,6 +232,7 @@ class CheckoutNotifier extends StateNotifier<CheckoutState> {
       final pdfBytes = await generator.generateFromDocument(
         document: document,
         documentTypeName: documentTypeName,
+        loyaltyData: loyaltyData,
       );
       
       // Guardar em ficheiro temporário

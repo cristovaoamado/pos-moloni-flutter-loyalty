@@ -14,6 +14,7 @@ import 'package:pos_moloni_app/features/printer/presentation/providers/printer_p
 import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
 import 'package:pos_moloni_app/features/scale/services/scale_service.dart';
 import 'package:pos_moloni_app/features/settings/presentation/screens/zero_tax_products_screen.dart';
+import 'package:pos_moloni_app/features/loyalty/loyalty.dart';
 
 /// Ecrã de Configurações organizado por Tabs
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -46,7 +47,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _tabController = TabController(length: 7, vsync: this);
     _loadSettings();
   }
 
@@ -387,6 +388,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 Tab(icon: Icon(Icons.api), text: 'API'),
                 Tab(icon: Icon(Icons.print), text: 'Impressora'),
                 Tab(icon: Icon(Icons.scale), text: 'Balança'),
+                Tab(icon: Icon(Icons.loyalty), text: 'Fidelização'),
                 Tab(icon: Icon(Icons.bug_report), text: 'Diagnóstico'),
                 Tab(icon: Icon(Icons.info), text: 'Sistema'),
               ],
@@ -403,6 +405,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen>
                 _buildApiTab(),
                 _buildPrinterTab(),
                 _buildScaleTab(),
+                const LoyaltySettingsWidget(),
                 _buildDiagnosticTab(),
                 _buildSystemTab(),
               ],

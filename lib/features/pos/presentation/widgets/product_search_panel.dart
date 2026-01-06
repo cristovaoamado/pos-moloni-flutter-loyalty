@@ -81,6 +81,8 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     _currentSearchPage = 0;
     ref.read(productProvider.notifier).clearSearchResults();
     setState(() {});
+    // Focar na caixa de pesquisa após limpar para nova pesquisa rápida
+    _searchFocusNode.requestFocus();
   }
 
   /// Converte FavoriteProductModel para Product

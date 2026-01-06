@@ -81,6 +81,7 @@ class DocumentModel extends Document {
     // - comercial_discount_value: valor dos descontos de linha
     // - financial_discount: percentagem do desconto financeiro/global
     // - financial_discount_value: valor do desconto financeiro/global
+    // - special_discount: valor do desconto especial (pontos fidelização)
     // - deduction_value: valor de deduções fiscais (outro tipo de dedução)
     // - taxes_value: valor total dos impostos
     // - net_value: valor final a pagar (após todos descontos e impostos)
@@ -89,8 +90,13 @@ class DocumentModel extends Document {
     final comercialDiscountValue = _parseDouble(json['comercial_discount_value']);
     final financialDiscount = _parseDouble(json['financial_discount']);
     final financialDiscountValue = _parseDouble(json['financial_discount_value']);
+    final specialDiscount = _parseDouble(json['special_discount']);
     final taxesValue = _parseDouble(json['taxes_value']);
     final netValue = _parseDouble(json['net_value']);
+    
+    // O desconto financeiro total = financial_discount_value + special_discount
+    // (ambos são descontos aplicados ao total do documento)
+    final totalFinancialDiscount = financialDiscountValue + specialDiscount;
     
     // Total Ilíquido = net_value - taxes_value (base tributável após descontos)
     final totalIliquido = netValue - taxesValue;
@@ -190,10 +196,10 @@ class DocumentModel extends Document {
       rsaHash: _parseString(json['rsa_hash']),
       // ==================== DESCONTOS ====================
       // financial_discount: percentagem do desconto global
-      // financial_discount_value: valor do desconto global
+      // financial_discount_value + special_discount: valor total do desconto financeiro
       // comercial_discount_value: valor dos descontos de linha
       deductionPercentage: financialDiscount,
-      deductionValue: financialDiscountValue,
+      deductionValue: totalFinancialDiscount,
       comercialDiscountValue: comercialDiscountValue,
     );
   }

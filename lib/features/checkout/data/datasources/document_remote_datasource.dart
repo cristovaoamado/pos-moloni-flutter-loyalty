@@ -24,6 +24,7 @@ class CreateDocumentRequest {
     this.notes,
     this.status = 1, // 1 = Fechado
     this.globalDiscount = 0, // Desconto global em percentagem (0-100)
+    this.specialDiscount = 0, // Desconto especial em valor monetário (€) - usado para pontos de fidelização
   });
 
   final DocumentTypeOption documentTypeOption;
@@ -34,6 +35,9 @@ class CreateDocumentRequest {
   final int status;
   /// Desconto global em percentagem (0-100)
   final double globalDiscount;
+  /// Desconto especial em valor monetário (€) - usado para pontos de fidelização
+  /// Este valor é deduzido directamente do total do documento
+  final double specialDiscount;
 }
 
 /// Informação de pagamento
@@ -292,9 +296,14 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           totalEstimado += itemTotal * (1 + taxRate / 100);
         }
         
-        // Aplicar desconto global se existir
+        // Aplicar desconto global (percentagem) se existir
         if (request.globalDiscount > 0) {
           totalEstimado = totalEstimado * (1 - request.globalDiscount / 100);
+        }
+        
+        // Aplicar desconto especial (valor em €) se existir - ex: pontos de fidelização
+        if (request.specialDiscount > 0) {
+          totalEstimado = totalEstimado - request.specialDiscount;
         }
         
         AppLogger.d('💰 Total estimado para Fatura Simplificada: ${totalEstimado.toStringAsFixed(2)} EUR');
@@ -345,9 +354,18 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         for (final tax in item.product.taxes) {
           AppLogger.d('   - Tax: id=${tax.id}, name="${tax.name}", value=${tax.value}');
           
+          // Verificar se tax_id é válido (> 0)
+          if (tax.id <= 0) {
+            AppLogger.w('   ⚠️ tax_id INVÁLIDO: ${tax.id} - este produto pode falhar!');
+            hasZeroTax = true; // Tratar como se não tivesse IVA
+            exemptionReason ??= 'M07';
+            continue; // Não adicionar tax inválida
+          }
+          
+          // NOTA: Só enviar tax_id é suficiente para a maioria dos casos
+          // O campo 'value' só é necessário quando o imposto é "definido por artigo"
           productTaxes.add({
             'tax_id': tax.id,
-            'value': tax.value,
           });
           
           // Se IVA é 0%, marcar para adicionar exemption_reason
@@ -444,6 +462,13 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
           AppLogger.d('   - Produto sem impostos, usando exemption_reason padrão: M07');
         }
         
+        // Se productTaxes ficou vazio (todos os tax_id eram inválidos), também precisa de exemption_reason
+        if (productTaxes.isEmpty && item.product.taxes.isNotEmpty) {
+          hasZeroTax = true;
+          exemptionReason ??= 'M07';
+          AppLogger.w('   ⚠️ productTaxes vazio após filtrar - todos os tax_id eram inválidos!');
+        }
+        
         // DEBUG: Log detalhado dos preços
         AppLogger.d('📦 Produto: ${item.product.name}');
         AppLogger.d('   - product.price (sem IVA): ${item.product.price}');
@@ -520,6 +545,14 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         jsonBody['financial_discount'] = double.parse(request.globalDiscount.toStringAsFixed(2));
         AppLogger.d('💰 Desconto global aplicado (financial_discount): ${request.globalDiscount}%');
       }
+      
+      // ==================== DESCONTO ESPECIAL (PONTOS FIDELIZAÇÃO) ====================
+      // Usar special_discount para desconto em valor monetário (€)
+      // Este campo é ideal para pontos de fidelização porque aceita valor em € directamente
+      if (request.specialDiscount > 0) {
+        jsonBody['special_discount'] = double.parse(request.specialDiscount.toStringAsFixed(2));
+        AppLogger.d('💰 Desconto especial aplicado (special_discount): ${request.specialDiscount}€');
+      }
       // ==========================================================
 
       // Adicionar notas se existirem
@@ -534,6 +567,7 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         'products_count': request.items.length,
         'payments_count': request.payments.length,
         'global_discount': request.globalDiscount,
+        'special_discount': request.specialDiscount,
       },);
 
       // Log detalhado de TODOS os produtos para debug
@@ -677,6 +711,17 @@ class DocumentRemoteDataSourceImpl implements DocumentRemoteDataSource {
         // Log do desconto global se existir
         if (data.containsKey('deduction')) {
           AppLogger.d('💰 Deduction (desconto global): ${data['deduction']}');
+        }
+        
+        // Log dos descontos financeiros
+        if (data.containsKey('financial_discount')) {
+          AppLogger.d('💰 Financial Discount: ${data['financial_discount']}%');
+        }
+        if (data.containsKey('financial_discount_value')) {
+          AppLogger.d('💰 Financial Discount Value: ${data['financial_discount_value']}€');
+        }
+        if (data.containsKey('special_discount')) {
+          AppLogger.d('💰 Special Discount (pontos): ${data['special_discount']}€');
         }
         
         return DocumentModel.fromJson(data);
