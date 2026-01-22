@@ -10,6 +10,9 @@ class AppSettingsModel extends AppSettings {
     super.defaultMargin,
     super.printerMac,
     super.username,
+    super.loyaltyApiUrl,
+    super.loyaltyEnabled,
+    super.loyaltyCardPrefix,
   });
 
   /// Converte Entity para Model
@@ -22,6 +25,9 @@ class AppSettingsModel extends AppSettings {
       defaultMargin: entity.defaultMargin,
       printerMac: entity.printerMac,
       username: entity.username,
+      loyaltyApiUrl: entity.loyaltyApiUrl,
+      loyaltyEnabled: entity.loyaltyEnabled,
+      loyaltyCardPrefix: entity.loyaltyCardPrefix,
     );
   }
 
@@ -35,6 +41,9 @@ class AppSettingsModel extends AppSettings {
       defaultMargin: (json['defaultMargin'] as num?)?.toDouble(),
       printerMac: json['printerMac'] as String?,
       username: json['username'] as String?,
+      loyaltyApiUrl: json['loyaltyApiUrl'] as String?,
+      loyaltyEnabled: json['loyaltyEnabled'] as bool?,
+      loyaltyCardPrefix: json['loyaltyCardPrefix'] as String?,
     );
   }
 
@@ -48,6 +57,9 @@ class AppSettingsModel extends AppSettings {
       'defaultMargin': defaultMargin,
       'printerMac': printerMac,
       'username': username,
+      'loyaltyApiUrl': loyaltyApiUrl,
+      'loyaltyEnabled': loyaltyEnabled,
+      'loyaltyCardPrefix': loyaltyCardPrefix,
     };
   }
 
@@ -61,6 +73,9 @@ class AppSettingsModel extends AppSettings {
       defaultMargin: defaultMargin,
       printerMac: printerMac,
       username: username,
+      loyaltyApiUrl: loyaltyApiUrl,
+      loyaltyEnabled: loyaltyEnabled,
+      loyaltyCardPrefix: loyaltyCardPrefix,
     );
   }
 
@@ -73,6 +88,9 @@ class AppSettingsModel extends AppSettings {
     double? defaultMargin,
     String? printerMac,
     String? username,
+    String? loyaltyApiUrl,
+    bool? loyaltyEnabled,
+    String? loyaltyCardPrefix,
   }) {
     return AppSettingsModel(
       apiUrl: apiUrl ?? this.apiUrl,
@@ -82,6 +100,9 @@ class AppSettingsModel extends AppSettings {
       defaultMargin: defaultMargin ?? this.defaultMargin,
       printerMac: printerMac ?? this.printerMac,
       username: username ?? this.username,
+      loyaltyApiUrl: loyaltyApiUrl ?? this.loyaltyApiUrl,
+      loyaltyEnabled: loyaltyEnabled ?? this.loyaltyEnabled,
+      loyaltyCardPrefix: loyaltyCardPrefix ?? this.loyaltyCardPrefix,
     );
   }
 }

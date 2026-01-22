@@ -1,3 +1,5 @@
+import 'coupon_models.dart';
+
 /// DTO para registar uma venda (Passo 1: Confirmar)
 class RegisterSaleRequest {
   final double amount;
@@ -5,6 +7,8 @@ class RegisterSaleRequest {
   final String? paymentMethod;
   final String? posIdentifier;
   final int pointsToRedeem;
+  final int? couponId;
+  final List<CheckoutItem>? items;
 
   const RegisterSaleRequest({
     required this.amount,
@@ -12,15 +16,20 @@ class RegisterSaleRequest {
     this.paymentMethod,
     this.posIdentifier,
     this.pointsToRedeem = 0,
+    this.couponId,
+    this.items,
   });
 
   Map<String, dynamic> toJson() {
     return {
       'amount': amount,
-      if (cardBarcode != null) 'cardBarcode': cardBarcode,
+      // CORRIGIDO: Backend espera 'cardIdentifier', não 'cardBarcode'
+      if (cardBarcode != null) 'cardIdentifier': cardBarcode,
       if (paymentMethod != null) 'paymentMethod': paymentMethod,
-      if (posIdentifier != null) 'posIdentifier': posIdentifier,
+      if (posIdentifier != null) 'terminalId': posIdentifier,
       'pointsToRedeem': pointsToRedeem,
+      if (couponId != null) 'couponId': couponId,
+      if (items != null) 'items': items!.map((i) => i.toJson()).toList(),
     };
   }
 }
@@ -36,6 +45,8 @@ class RegisterSaleResult {
   final int? newPointsBalance;
   final String? customerName;
   final String? tierName;
+  final AppliedCoupon? couponApplied;
+  final int bonusPointsFromCoupon;
 
   const RegisterSaleResult({
     required this.saleId,
@@ -47,20 +58,85 @@ class RegisterSaleResult {
     this.newPointsBalance,
     this.customerName,
     this.tierName,
+    this.couponApplied,
+    this.bonusPointsFromCoupon = 0,
   });
 
   factory RegisterSaleResult.fromJson(Map<String, dynamic> json) {
+    // DEBUG: Log dos campos recebidos
+    print('🔵 RegisterSaleResult.fromJson:');
+    print('   saleId/transactionId: ${json['saleId'] ?? json['transactionId']}');
+    print('   amount: ${json['amount']}');
+    print('   discountApplied/discountFromPoints: ${json['discountApplied'] ?? json['discountFromPoints']}');
+    print('   finalAmount: ${json['finalAmount']}');
+    print('   pointsEarned: ${json['pointsEarned']}');
+    print('   pointsRedeemed: ${json['pointsRedeemed']}');
+    print('   newPointsBalance/newBalance: ${json['newPointsBalance'] ?? json['newBalance']}');
+    print('   bonusPointsFromCoupon: ${json['bonusPointsFromCoupon']}');
+    print('   couponApplied: ${json['couponApplied']}');
+    
+    // Parsing com múltiplos nomes de campo possíveis
+    final saleId = json['saleId'] as int? ?? 
+                   json['transactionId'] as int? ?? 
+                   json['id'] as int? ?? 0;
+    
+    final amount = (json['amount'] as num?)?.toDouble() ?? 
+                   (json['totalAmount'] as num?)?.toDouble() ?? 0;
+    
+    final discountApplied = (json['discountApplied'] as num?)?.toDouble() ??
+                            (json['discountFromPoints'] as num?)?.toDouble() ??
+                            (json['pointsDiscount'] as num?)?.toDouble() ?? 0;
+    
+    final finalAmount = (json['finalAmount'] as num?)?.toDouble() ??
+                        (json['amountToPay'] as num?)?.toDouble() ??
+                        (amount - discountApplied);
+    
+    final pointsEarned = json['pointsEarned'] as int? ?? 
+                         json['points'] as int? ?? 0;
+    
+    final pointsRedeemed = json['pointsRedeemed'] as int? ??
+                           json['pointsUsed'] as int? ?? 0;
+    
+    final newBalance = json['newPointsBalance'] as int? ?? 
+                       json['newBalance'] as int? ??
+                       json['balanceAfter'] as int?;
+    
+    final bonusPoints = json['bonusPointsFromCoupon'] as int? ??
+                        json['bonusPoints'] as int? ?? 0;
+    
+    AppliedCoupon? coupon;
+    if (json['couponApplied'] != null) {
+      coupon = AppliedCoupon.fromJson(json['couponApplied'] as Map<String, dynamic>);
+    } else if (json['appliedCoupon'] != null) {
+      coupon = AppliedCoupon.fromJson(json['appliedCoupon'] as Map<String, dynamic>);
+    }
+    
     return RegisterSaleResult(
-      saleId: json['saleId'] as int,
-      amount: (json['amount'] as num).toDouble(),
-      discountApplied: (json['discountApplied'] as num?)?.toDouble() ?? 0,
-      finalAmount: (json['finalAmount'] as num).toDouble(),
-      pointsEarned: json['pointsEarned'] as int? ?? 0,
-      pointsRedeemed: json['pointsRedeemed'] as int? ?? 0,
-      newPointsBalance: json['newPointsBalance'] as int?,
+      saleId: saleId,
+      amount: amount,
+      discountApplied: discountApplied,
+      finalAmount: finalAmount,
+      pointsEarned: pointsEarned,
+      pointsRedeemed: pointsRedeemed,
+      newPointsBalance: newBalance,
       customerName: json['customerName'] as String?,
       tierName: json['tierName'] as String?,
+      couponApplied: coupon,
+      bonusPointsFromCoupon: bonusPoints,
     );
+  }
+
+  /// Total de desconto (pontos + cupão)
+  double get totalDiscount => discountApplied + (couponApplied?.totalDiscount ?? 0);
+  
+  /// Total de pontos ganhos (base + bónus cupão)
+  int get totalPointsEarned => pointsEarned + bonusPointsFromCoupon;
+  
+  @override
+  String toString() {
+    return 'RegisterSaleResult(saleId: $saleId, amount: $amount, finalAmount: $finalAmount, '
+           'pointsEarned: $pointsEarned, pointsRedeemed: $pointsRedeemed, '
+           'newBalance: $newPointsBalance, discount: $totalDiscount)';
   }
 }
 
@@ -78,7 +154,7 @@ class CompleteSaleRequest {
 
   Map<String, dynamic> toJson() {
     return {
-      'saleId': saleId,
+      'transactionId': saleId,
       if (documentReference != null) 'documentReference': documentReference,
       if (documentId != null) 'documentId': documentId,
     };
@@ -97,7 +173,7 @@ class CancelSaleRequest {
 
   Map<String, dynamic> toJson() {
     return {
-      'saleId': saleId,
+      'transactionId': saleId,
       if (reason != null) 'reason': reason,
     };
   }

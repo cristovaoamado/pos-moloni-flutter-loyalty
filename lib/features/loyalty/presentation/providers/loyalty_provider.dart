@@ -1,18 +1,18 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:pos_moloni_app/features/settings/presentation/providers/settings_provider.dart';
 import '../../data/datasources/loyalty_remote_datasource.dart';
 import '../../data/models/sale_models.dart';
+import '../../data/models/coupon_models.dart';
 import '../../domain/entities/loyalty_customer.dart';
 
 // ==================== Constantes ====================
 
-const String _keyLoyaltyApiUrl = 'loyalty_api_url';
 const String _keyLoyaltyEnabled = 'loyalty_enabled';
 const String _keyLoyaltyCardPrefix = 'loyalty_card_prefix';
 const String _keyPosIdentifier = 'pos_identifier';
 
-const String _defaultApiUrl = 'http://localhost:5000/api';
 const String _defaultCardPrefix = '269';
 
 // ==================== Estado ====================
@@ -28,6 +28,11 @@ class LoyaltyState {
   final String apiUrl;
   final String cardPrefix;
   final bool isConnected;
+  
+  // Cupões
+  final List<AvailableCoupon> availableCoupons;
+  final AvailableCoupon? selectedCoupon;
+  final ApplyCouponResult? couponCalculation;
 
   const LoyaltyState({
     this.isEnabled = false,
@@ -36,9 +41,12 @@ class LoyaltyState {
     this.currentCustomer,
     this.pendingSaleId,
     this.lastSaleResult,
-    this.apiUrl = _defaultApiUrl,
+    this.apiUrl = '',
     this.cardPrefix = _defaultCardPrefix,
     this.isConnected = false,
+    this.availableCoupons = const [],
+    this.selectedCoupon,
+    this.couponCalculation,
   });
 
   LoyaltyState copyWith({
@@ -54,6 +62,11 @@ class LoyaltyState {
     String? apiUrl,
     String? cardPrefix,
     bool? isConnected,
+    List<AvailableCoupon>? availableCoupons,
+    AvailableCoupon? selectedCoupon,
+    bool clearSelectedCoupon = false,
+    ApplyCouponResult? couponCalculation,
+    bool clearCouponCalculation = false,
   }) {
     return LoyaltyState(
       isEnabled: isEnabled ?? this.isEnabled,
@@ -65,6 +78,9 @@ class LoyaltyState {
       apiUrl: apiUrl ?? this.apiUrl,
       cardPrefix: cardPrefix ?? this.cardPrefix,
       isConnected: isConnected ?? this.isConnected,
+      availableCoupons: clearCustomer ? const [] : (availableCoupons ?? this.availableCoupons),
+      selectedCoupon: clearSelectedCoupon || clearCustomer ? null : (selectedCoupon ?? this.selectedCoupon),
+      couponCalculation: clearCouponCalculation || clearCustomer ? null : (couponCalculation ?? this.couponCalculation),
     );
   }
 
@@ -86,6 +102,28 @@ class LoyaltyState {
     final pointsValue = currentCustomer!.card!.pointsValueInEuros;
     return pointsValue > cartTotal ? cartTotal : pointsValue;
   }
+
+  /// Verifica se há cupões disponíveis
+  bool get hasCoupons => availableCoupons.isNotEmpty;
+
+  /// Verifica se há cupão seleccionado
+  bool get hasCouponSelected => selectedCoupon != null;
+
+  /// Desconto do cupão calculado
+  double get couponDiscount => couponCalculation?.totalDiscount ?? 0;
+
+  /// Pontos bónus do cupão calculado
+  int get couponBonusPoints => couponCalculation?.totalBonusPoints ?? 0;
+
+  /// Verifica se cupão seleccionado é de pontos bónus
+  bool get isBonusPointsCoupon => selectedCoupon?.isBonusPointsCoupon ?? false;
+
+  /// Filtra cupões que têm produtos elegíveis no carrinho
+  List<AvailableCoupon> getApplicableCoupons(List<String> cartProductReferences) {
+    return availableCoupons.where((coupon) {
+      return coupon.hasApplicableProducts(cartProductReferences);
+    }).toList();
+  }
 }
 
 // ==================== Notifier ====================
@@ -93,28 +131,44 @@ class LoyaltyState {
 /// Provider principal do módulo Loyalty
 final loyaltyProvider = StateNotifierProvider<LoyaltyNotifier, LoyaltyState>((ref) {
   final dataSource = ref.watch(loyaltyRemoteDataSourceProvider);
-  return LoyaltyNotifier(dataSource);
+  final settingsState = ref.watch(settingsProvider);
+  return LoyaltyNotifier(dataSource, ref, settingsState);
 });
 
 /// Notifier para gestão do estado Loyalty
 class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
   final LoyaltyRemoteDataSource _dataSource;
+  final Ref _ref;
+  final SettingsState _settingsState;
 
-  LoyaltyNotifier(this._dataSource) : super(const LoyaltyState()) {
+  LoyaltyNotifier(this._dataSource, this._ref, this._settingsState) : super(const LoyaltyState()) {
     _loadSettings();
   }
 
   // ==================== Inicialização ====================
 
-  /// Carrega configurações das SharedPreferences
+  /// Carrega configurações das SharedPreferences e Settings
   Future<void> _loadSettings() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final apiUrl = prefs.getString(_keyLoyaltyApiUrl) ?? _defaultApiUrl;
-      final isEnabled = prefs.getBool(_keyLoyaltyEnabled) ?? false;
-      final cardPrefix = prefs.getString(_keyLoyaltyCardPrefix) ?? _defaultCardPrefix;
+      
+      // Usar URL do Settings se disponível, senão usar SharedPreferences (legado)
+      String apiUrl = '';
+      final settings = _settingsState.settings;
+      if (settings?.loyaltyApiUrl != null && settings!.loyaltyApiUrl!.isNotEmpty) {
+        apiUrl = settings.loyaltyApiUrl!;
+      } else {
+        // Fallback para SharedPreferences (compatibilidade)
+        apiUrl = prefs.getString('loyalty_api_url') ?? '';
+      }
+      
+      // Enabled e CardPrefix do Settings ou SharedPreferences
+      bool isEnabled = settings?.loyaltyEnabled ?? prefs.getBool(_keyLoyaltyEnabled) ?? false;
+      String cardPrefix = settings?.loyaltyCardPrefix ?? prefs.getString(_keyLoyaltyCardPrefix) ?? _defaultCardPrefix;
 
-      _dataSource.setBaseUrl(apiUrl);
+      if (apiUrl.isNotEmpty) {
+        _dataSource.setBaseUrl(apiUrl);
+      }
 
       state = state.copyWith(
         apiUrl: apiUrl,
@@ -122,8 +176,8 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
         cardPrefix: cardPrefix,
       );
 
-      // Testar conexão se estiver activo
-      if (isEnabled) {
+      // Testar conexão se estiver activo e tiver URL
+      if (isEnabled && apiUrl.isNotEmpty) {
         await testConnection();
       }
     } catch (e) {
@@ -133,21 +187,32 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
 
   // ==================== Configurações ====================
 
+  /// Actualiza o URL da API a partir das Settings
+  void updateFromSettings() {
+    final settings = _ref.read(settingsProvider).settings;
+    if (settings?.loyaltyApiUrl != null && settings!.loyaltyApiUrl!.isNotEmpty) {
+      _dataSource.setBaseUrl(settings.loyaltyApiUrl!);
+      state = state.copyWith(
+        apiUrl: settings.loyaltyApiUrl!,
+        isEnabled: settings.loyaltyEnabled ?? state.isEnabled,
+        cardPrefix: settings.loyaltyCardPrefix ?? state.cardPrefix,
+      );
+    }
+  }
+
   /// Activa ou desactiva o módulo Loyalty
   Future<void> setEnabled(bool enabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool(_keyLoyaltyEnabled, enabled);
     state = state.copyWith(isEnabled: enabled);
 
-    if (enabled) {
+    if (enabled && state.apiUrl.isNotEmpty) {
       await testConnection();
     }
   }
 
-  /// Define o URL da API
+  /// Define o URL da API (usado pelo widget de settings)
   Future<void> setApiUrl(String url) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_keyLoyaltyApiUrl, url);
     _dataSource.setBaseUrl(url);
     state = state.copyWith(apiUrl: url);
   }
@@ -161,6 +226,14 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
 
   /// Testa conexão com a API
   Future<bool> testConnection() async {
+    if (state.apiUrl.isEmpty) {
+      state = state.copyWith(
+        isConnected: false,
+        error: 'URL da API não configurado',
+      );
+      return false;
+    }
+
     state = state.copyWith(isLoading: true, error: null);
     
     try {
@@ -179,13 +252,42 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
 
   // ==================== Gestão de Cliente ====================
 
-  /// Identifica cliente pelo código de barras do cartão
+  /// Identifica cliente pelo código de barras do cartão (com cupões)
   Future<bool> identifyCustomerByBarcode(String barcode) async {
     if (!state.isEnabled) return false;
 
     state = state.copyWith(isLoading: true, error: null);
 
     try {
+      // Tentar endpoint POS primeiro (que inclui cupões)
+      final posInfo = await _dataSource.getPosCardInfo(barcode);
+      
+      if (posInfo != null) {
+        final customer = LoyaltyCustomer(
+          id: 0,
+          name: posInfo.customerName ?? '',
+          nif: posInfo.customerNif,
+          card: LoyaltyCard(
+            id: 0,
+            cardNumber: posInfo.cardNumber ?? '',
+            barcode: posInfo.barcode ?? barcode,
+            pointsBalance: posInfo.pointsBalance,
+            totalPointsEarned: 0,
+            totalPointsRedeemed: 0,
+            tier: LoyaltyTier.fromInt(posInfo.tier),
+            status: CardStatus.active,
+          ),
+        );
+
+        state = state.copyWith(
+          isLoading: false,
+          currentCustomer: customer,
+          availableCoupons: posInfo.availableCoupons,
+        );
+        return true;
+      }
+
+      // Fallback para endpoint antigo
       final cardInfo = await _dataSource.getCardByBarcode(barcode);
       
       if (cardInfo == null) {
@@ -208,6 +310,7 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
       state = state.copyWith(
         isLoading: false,
         currentCustomer: customer,
+        availableCoupons: const [], // Sem cupões no endpoint antigo
       );
       return true;
     } on LoyaltyApiException catch (e) {
@@ -228,6 +331,74 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
       clearCustomer: true,
       clearPendingSale: true,
       clearLastSaleResult: true,
+      clearSelectedCoupon: true,
+      clearCouponCalculation: true,
+    );
+  }
+
+  // ==================== Cupões ====================
+
+  /// Selecciona um cupão e calcula o desconto
+  Future<void> selectCoupon(AvailableCoupon? coupon, List<CheckoutItem> items) async {
+    if (coupon == null) {
+      state = state.copyWith(
+        clearSelectedCoupon: true,
+        clearCouponCalculation: true,
+      );
+      return;
+    }
+
+    // Precisamos do cardIdentifier para chamar a API
+    final cardIdentifier = state.currentCustomer?.card?.barcode ?? 
+                           state.currentCustomer?.card?.cardNumber;
+    
+    if (cardIdentifier == null) {
+      state = state.copyWith(
+        error: 'Cartão não identificado',
+        clearSelectedCoupon: true,
+      );
+      return;
+    }
+
+    state = state.copyWith(
+      selectedCoupon: coupon,
+      isLoading: true,
+      error: null,
+    );
+
+    try {
+      final result = await _dataSource.calculateCouponDiscount(
+        cardIdentifier: cardIdentifier,
+        couponCode: coupon.code,
+        items: items,
+      );
+
+      state = state.copyWith(
+        isLoading: false,
+        couponCalculation: result,
+      );
+    } on LoyaltyApiException catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: e.message,
+        clearSelectedCoupon: true,
+        clearCouponCalculation: true,
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        error: 'Erro ao calcular desconto',
+        clearSelectedCoupon: true,
+        clearCouponCalculation: true,
+      );
+    }
+  }
+
+  /// Limpa cupão seleccionado
+  void clearCoupon() {
+    state = state.copyWith(
+      clearSelectedCoupon: true,
+      clearCouponCalculation: true,
     );
   }
 
@@ -238,6 +409,7 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
     required double amount,
     String? paymentMethod,
     int pointsToRedeem = 0,
+    List<CheckoutItem>? items,
   }) async {
     state = state.copyWith(isLoading: true, error: null);
 
@@ -251,6 +423,8 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
         paymentMethod: paymentMethod,
         posIdentifier: posIdentifier,
         pointsToRedeem: pointsToRedeem,
+        couponId: state.selectedCoupon?.id,
+        items: state.selectedCoupon != null ? items : null,
       );
 
       final result = await _dataSource.registerSale(request);
@@ -300,6 +474,8 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
         clearPendingSale: true,
         clearCustomer: true,
         clearLastSaleResult: true,
+        clearSelectedCoupon: true,
+        clearCouponCalculation: true,
       );
 
       return true;
@@ -330,6 +506,8 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
       state = state.copyWith(
         clearPendingSale: true,
         clearLastSaleResult: true,
+        clearSelectedCoupon: true,
+        clearCouponCalculation: true,
       );
 
       return true;

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/loyalty_customer_model.dart';
 import '../models/sale_models.dart';
+import '../models/coupon_models.dart';
 
 /// Provider para o datasource
 final loyaltyRemoteDataSourceProvider = Provider<LoyaltyRemoteDataSource>((ref) {
@@ -32,9 +33,30 @@ class LoyaltyRemoteDataSource {
 
   String get baseUrl => _baseUrl;
 
-  // ==================== Cartões ====================
+  // ==================== POS ====================
 
-  /// Busca informação do cartão por código de barras
+  /// Busca informação do cartão com cupões disponíveis
+  /// Endpoint: GET /api/pos/card/{identifier}
+  Future<PosCardInfoResult?> getPosCardInfo(String identifier) async {
+    try {
+      final response = await _dio.get('$_baseUrl/pos/card/$identifier');
+      
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['success'] == true && data['data'] != null) {
+          return PosCardInfoResult.fromJson(data['data'] as Map<String, dynamic>);
+        }
+      }
+      return null;
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404) {
+        return null;
+      }
+      throw LoyaltyApiException('Erro ao buscar cartão: ${e.message}');
+    }
+  }
+
+  /// Busca informação do cartão por código de barras (endpoint alternativo)
   /// Endpoint: GET /api/cards/barcode/{barcode}
   Future<CardInfoResponse?> getCardByBarcode(String barcode) async {
     try {
@@ -79,14 +101,47 @@ class LoyaltyRemoteDataSource {
     }
   }
 
+  // ==================== Cupões ====================
+
+  /// Calcula desconto do cupão para os itens do carrinho
+  /// Endpoint: POST /api/pos/coupon-discount/{cardIdentifier}
+  Future<ApplyCouponResult?> calculateCouponDiscount({
+    required String cardIdentifier,
+    required String couponCode,
+    required List<CheckoutItem> items,
+  }) async {
+    try {
+      final response = await _dio.post(
+        '$_baseUrl/pos/coupon-discount/$cardIdentifier',
+        data: {
+          'couponCode': couponCode,
+          'items': items.map((i) => i.toJson()).toList(),
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['success'] == true && data['data'] != null) {
+          return ApplyCouponResult.fromJson(data['data'] as Map<String, dynamic>);
+        }
+        // Se não tem wrapper, tenta parsear direto
+        return ApplyCouponResult.fromJson(data as Map<String, dynamic>);
+      }
+      return null;
+    } on DioException catch (e) {
+      final message = _extractErrorMessage(e);
+      throw LoyaltyApiException(message);
+    }
+  }
+
   // ==================== Vendas ====================
 
   /// Passo 1: Registar venda (botão "Confirmar")
-  /// Endpoint: POST /api/sales/register
+  /// Endpoint: POST /api/pos/confirm
   Future<RegisterSaleResult> registerSale(RegisterSaleRequest request) async {
     try {
       final response = await _dio.post(
-        '$_baseUrl/sales/register',
+        '$_baseUrl/pos/confirm',
         data: request.toJson(),
       );
 
@@ -105,18 +160,32 @@ class LoyaltyRemoteDataSource {
   }
 
   /// Passo 2: Finalizar venda (botão "Finalizar")
-  /// Endpoint: POST /api/sales/complete
+  /// Endpoint: POST /api/pos/sync
   Future<SaleResponse> completeSale(CompleteSaleRequest request) async {
     try {
       final response = await _dio.post(
-        '$_baseUrl/sales/complete',
-        data: request.toJson(),
+        '$_baseUrl/pos/sync',
+        data: {
+          'transactionId': request.saleId,
+          'documentReference': request.documentReference,
+          'documentId': request.documentId,
+        },
       );
 
       if (response.statusCode == 200) {
         final data = response.data;
-        if (data['success'] == true && data['data'] != null) {
-          return SaleResponse.fromJson(data['data'] as Map<String, dynamic>);
+        if (data['success'] == true) {
+          // A resposta de sync não retorna a venda completa, criamos uma resposta simplificada
+          return SaleResponse(
+            id: request.saleId,
+            saleDate: DateTime.now(),
+            amount: 0,
+            pointsEarned: 0,
+            pointsRedeemed: 0,
+            discountApplied: 0,
+            status: 'Completed',
+            createdAt: DateTime.now(),
+          );
         }
         throw LoyaltyApiException(data['message'] ?? 'Erro ao finalizar venda');
       }
@@ -128,12 +197,15 @@ class LoyaltyRemoteDataSource {
   }
 
   /// Cancelar venda pendente
-  /// Endpoint: POST /api/sales/cancel
+  /// Endpoint: POST /api/pos/cancel
   Future<bool> cancelSale(CancelSaleRequest request) async {
     try {
       final response = await _dio.post(
-        '$_baseUrl/sales/cancel',
-        data: request.toJson(),
+        '$_baseUrl/pos/cancel',
+        data: {
+          'transactionId': request.saleId,
+          'reason': request.reason,
+        },
       );
 
       if (response.statusCode == 200) {
@@ -153,7 +225,7 @@ class LoyaltyRemoteDataSource {
   Future<bool> testConnection() async {
     try {
       final response = await _dio.get(
-        '$_baseUrl/sales/today/stats',
+        '$_baseUrl/dashboard/stats',
         options: Options(
           receiveTimeout: const Duration(seconds: 5),
         ),
@@ -183,4 +255,52 @@ class LoyaltyApiException implements Exception {
 
   @override
   String toString() => message;
+}
+
+/// Resultado completo do endpoint /api/pos/card/{identifier}
+class PosCardInfoResult {
+  final String? cardNumber;
+  final String? barcode;
+  final String? customerName;
+  final String? customerNif;
+  final int pointsBalance;
+  final double pointsValue;
+  final int tier;
+  final String tierName;
+  final bool canEarnPoints;
+  final bool canRedeemPoints;
+  final List<AvailableCoupon> availableCoupons;
+
+  const PosCardInfoResult({
+    this.cardNumber,
+    this.barcode,
+    this.customerName,
+    this.customerNif,
+    required this.pointsBalance,
+    required this.pointsValue,
+    required this.tier,
+    required this.tierName,
+    required this.canEarnPoints,
+    required this.canRedeemPoints,
+    required this.availableCoupons,
+  });
+
+  factory PosCardInfoResult.fromJson(Map<String, dynamic> json) {
+    return PosCardInfoResult(
+      cardNumber: json['cardNumber'] as String?,
+      barcode: json['barcode'] as String?,
+      customerName: json['customerName'] as String?,
+      customerNif: json['customerNif'] as String?,
+      pointsBalance: json['pointsBalance'] as int? ?? 0,
+      pointsValue: (json['pointsValue'] as num?)?.toDouble() ?? 0,
+      tier: json['tier'] as int? ?? 1,
+      tierName: json['tierName'] as String? ?? 'Bronze',
+      canEarnPoints: json['canEarnPoints'] as bool? ?? true,
+      canRedeemPoints: json['canRedeemPoints'] as bool? ?? true,
+      availableCoupons: (json['availableCoupons'] as List<dynamic>?)
+              ?.map((e) => AvailableCoupon.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
 }
