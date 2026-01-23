@@ -68,8 +68,6 @@ class ThermalPrinterService {
 
   // Comandos ESC/POS
   static const List<int> _cmdInit = [0x1B, 0x40]; // ESC @ - Initialize
-  // static const List<int> _cmdCut = [0x1D, 0x56, 0x00]; // GS V 0 - Full cut
-  // static const List<int> _cmdPartialCut = [0x1D, 0x56, 0x01]; // GS V 1 - Partial cut
   static const List<int> _cmdFeedAndCut = [0x1D, 0x56, 0x41, 0x03]; // Feed and cut
   static const List<int> _cmdAlignLeft = [0x1B, 0x61, 0x00]; // ESC a 0
   static const List<int> _cmdAlignCenter = [0x1B, 0x61, 0x01]; // ESC a 1
@@ -77,18 +75,19 @@ class ThermalPrinterService {
   static const List<int> _cmdBoldOn = [0x1B, 0x45, 0x01]; // ESC E 1
   static const List<int> _cmdBoldOff = [0x1B, 0x45, 0x00]; // ESC E 0
   static const List<int> _cmdDoubleHeight = [0x1B, 0x21, 0x10]; // ESC ! 16
-  // static const List<int> _cmdDoubleWidth = [0x1B, 0x21, 0x20]; // ESC ! 32
   static const List<int> _cmdDoubleSize = [0x1B, 0x21, 0x30]; // ESC ! 48
   static const List<int> _cmdNormalSize = [0x1B, 0x21, 0x00]; // ESC ! 0
   static const List<int> _cmdFeed1 = [0x0A]; // Line feed
   static const List<int> _cmdFeed3 = [0x1B, 0x64, 0x03]; // ESC d 3 - Feed 3 lines
   
-  // Comandos de abertura de gaveta
-  // EPSON TM-T20II usa ESC p m t1 t2
-  // m = 0 (pino 2) ou 1 (pino 5)
-  // t1 = tempo ON (t1 × 2 ms) - 50 = 100ms
-  // t2 = tempo OFF (t2 × 2 ms) - 255 = 510ms
-  static const List<int> _cmdOpenDrawerEpson = [0x1B, 0x70, 0x00, 0x32, 0xFF]; // ESC p 0 50 255 - Epson TM-T20II
+  // Comandos de abertura de gaveta para EPSON TM-T20II
+  // ESC p m t1 t2: m=pino(0/1), t1=ON time, t2=OFF time
+  // Pino 2 (conector drawer kick)
+  static const List<int> _cmdOpenDrawerPin2 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250
+  // Pino 5 (alternativo)
+  static const List<int> _cmdOpenDrawerPin5 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250
+  // Comando DLE (alternativo para algumas impressoras)
+  static const List<int> _cmdOpenDrawerDLE = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4
 
   /// Configura a impressora
   void configure(PrinterConfig config) {
@@ -231,7 +230,6 @@ class ThermalPrinterService {
 
   Future<PrintResult> _printTestPageUsb() async {
     try {
-      // Criar PDF simples para teste
       final doc = pw.Document();
       doc.addPage(
         pw.Page(
@@ -273,8 +271,6 @@ class ThermalPrinterService {
     if (_config!.connectionType == PrinterConnectionType.usb) {
       return await _printPdfUsb(pdfBytes);
     } else {
-      // Para rede, converter PDF para imagem e enviar via ESC/POS
-      // Por agora, usar o método USB que funciona melhor com PDFs
       return await _printPdfUsb(pdfBytes);
     }
   }
@@ -305,13 +301,14 @@ class ThermalPrinterService {
   }
 
   /// Abre a gaveta de dinheiro
-  /// Funciona tanto via rede como via USB
+  /// Para EPSON TM-T20II via USB no Windows
   Future<PrintResult> openCashDrawer() async {
     if (_config == null || !_config!.isConfigured) {
       return PrintResult.fail('Impressora não configurada');
     }
 
     AppLogger.i('🗄️ Tentando abrir gaveta via ${_config!.connectionType.name}...');
+    AppLogger.i('🗄️ Impressora: ${_config!.name}');
 
     if (_config!.connectionType == PrinterConnectionType.network) {
       return await _openDrawerNetwork();
@@ -321,13 +318,11 @@ class ThermalPrinterService {
   }
 
   /// Abre gaveta via impressora de rede (ESC/POS directo)
-  /// Tenta primeiro comando Epson, depois genérico, depois DLE
   Future<PrintResult> _openDrawerNetwork() async {
     try {
-      // Comando Epson TM-T20II (mais fiável para esta impressora)
       final bytes = <int>[];
       bytes.addAll(_cmdInit);
-      bytes.addAll(_cmdOpenDrawerEpson);
+      bytes.addAll(_cmdOpenDrawerPin2);
 
       return await _printNetwork(bytes);
     } catch (e) {
@@ -335,107 +330,109 @@ class ThermalPrinterService {
     }
   }
 
-  /// Abre gaveta via impressora USB
-  /// Usa o package printing para enviar um PDF minúsculo com comando de gaveta
+  /// Abre gaveta via impressora USB no Windows
+  /// Usa múltiplos métodos para garantir compatibilidade com Epson TM-T20II
   Future<PrintResult> _openDrawerUsb() async {
+    if (!Platform.isWindows) {
+      return PrintResult.fail('Abertura de gaveta USB só suportada no Windows');
+    }
+
     try {
-      final printers = await listPrinters();
-      final printer = printers.firstWhere(
-        (p) => p.name.toLowerCase() == _config!.name.toLowerCase(),
-        orElse: () => throw Exception('Impressora "${_config!.name}" não encontrada'),
-      );
+      final printerName = _config!.name;
+      AppLogger.d('🗄️ Abrindo gaveta USB: $printerName');
 
-      AppLogger.d('🗄️ Abrindo gaveta via USB: ${printer.name}');
-
-      // Método 1: Enviar dados RAW via Windows (funciona melhor para comandos ESC/POS)
-      if (Platform.isWindows) {
-        final result = await _openDrawerWindowsRaw(printer.name);
-        if (result.success) return result;
-        AppLogger.w('Método RAW falhou, tentando PDF...');
+      // Método 1: Tentar via porta da impressora (mais directo)
+      var result = await _openDrawerViaPort(printerName);
+      if (result.success) {
+        AppLogger.i('✅ Gaveta aberta via porta');
+        return result;
       }
+      AppLogger.w('Método porta falhou: ${result.error}');
 
-      // Método 2: Criar PDF mínimo com comando embutido (fallback)
-      // Algumas impressoras térmicas executam comandos ESC/POS embutidos no PostScript/PDF
-      final doc = pw.Document();
-      doc.addPage(
-        pw.Page(
-          pageFormat: const PdfPageFormat(72, 10), // Página minúscula
-          build: (pw.Context context) {
-            return pw.Container(); // Página vazia
-          },
-        ),
-      );
-
-      final pdfBytes = await doc.save();
-      
-      final result = await Printing.directPrintPdf(
-        printer: printer,
-        onLayout: (_) async => pdfBytes,
-        name: 'OpenDrawer',
-      );
-
-      if (result) {
-        // Tentar também via RawDataPrinter se disponível
-        await _sendRawEscPosToWindowsPrinter(printer.name, _cmdOpenDrawerEpson);
-        return PrintResult.ok('Comando de gaveta enviado');
-      } else {
-        return PrintResult.fail('Falha ao enviar comando');
+      // Método 2: Tentar via PowerShell RawPrinterHelper
+      result = await _openDrawerViaPowerShell(printerName);
+      if (result.success) {
+        AppLogger.i('✅ Gaveta aberta via PowerShell');
+        return result;
       }
+      AppLogger.w('Método PowerShell falhou: ${result.error}');
+
+      // Método 3: Tentar via ficheiro temporário e print
+      result = await _openDrawerViaFile(printerName);
+      if (result.success) {
+        AppLogger.i('✅ Gaveta aberta via ficheiro');
+        return result;
+      }
+      AppLogger.w('Método ficheiro falhou: ${result.error}');
+
+      return PrintResult.fail('Não foi possível abrir a gaveta. Verifique a conexão.');
     } catch (e) {
       AppLogger.e('Erro ao abrir gaveta USB: $e');
       return PrintResult.fail('Erro: $e');
     }
   }
 
-  /// Envia comandos RAW para impressora Windows
-  /// Este método usa a API nativa do Windows para enviar dados binários directamente
-  Future<PrintResult> _openDrawerWindowsRaw(String printerName) async {
+  /// Método 1: Enviar comandos directamente para a porta da impressora
+  Future<PrintResult> _openDrawerViaPort(String printerName) async {
     try {
-      // Criar ficheiro temporário com comandos ESC/POS
-      final tempDir = Directory.systemTemp;
-      final tempFile = File('${tempDir.path}/drawer_cmd.bin');
-      
-      // Usar comando Epson TM-T20II
-      final bytes = <int>[];
-      bytes.addAll(_cmdInit);
-      bytes.addAll(_cmdOpenDrawerEpson);
-      
-      await tempFile.writeAsBytes(bytes);
-
-      // Usar copy /b no Windows para enviar dados RAW
-      // Primeiro, precisamos descobrir a porta da impressora
-      final portResult = await _getWindowsPrinterPort(printerName);
-      
-      if (portResult != null) {
-        final result = await Process.run(
-          'cmd',
-          ['/c', 'copy', '/b', tempFile.path, portResult],
-          runInShell: true,
-        );
-        
-        await tempFile.delete();
-        
-        if (result.exitCode == 0) {
-          AppLogger.i('✅ Gaveta aberta via porta $portResult');
-          return PrintResult.ok('Gaveta aberta');
-        }
+      // Obter porta da impressora
+      final port = await _getWindowsPrinterPort(printerName);
+      if (port == null) {
+        return PrintResult.fail('Porta não encontrada');
       }
 
-      // Alternativa: usar PowerShell para enviar directamente
-      final psResult = await _openDrawerPowerShell(printerName, bytes);
-      await tempFile.delete();
-      return psResult;
+      AppLogger.d('🗄️ Porta encontrada: $port');
+
+      // Criar ficheiro temporário com comandos
+      final tempDir = Directory.systemTemp;
+      final tempFile = File('${tempDir.path}\\drawer_${DateTime.now().millisecondsSinceEpoch}.bin');
       
+      // Comandos para Epson TM-T20II
+      final bytes = <int>[
+        ..._cmdInit,
+        ..._cmdOpenDrawerPin2,
+      ];
+      
+      await tempFile.writeAsBytes(bytes, flush: true);
+
+      // Enviar para a porta
+      ProcessResult result;
+      if (port.toUpperCase().startsWith('USB')) {
+        // Para portas USB, usar o nome da impressora directamente
+        result = await Process.run(
+          'cmd',
+          ['/c', 'copy', '/b', tempFile.path, '"\\\\localhost\\$printerName"'],
+          runInShell: true,
+        );
+      } else {
+        // Para outras portas (COM, LPT)
+        result = await Process.run(
+          'cmd',
+          ['/c', 'copy', '/b', tempFile.path, port],
+          runInShell: true,
+        );
+      }
+
+      // Limpar ficheiro temporário
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+
+      if (result.exitCode == 0) {
+        return PrintResult.ok('Gaveta aberta');
+      } else {
+        return PrintResult.fail('Falha: ${result.stderr}');
+      }
     } catch (e) {
-      AppLogger.e('Erro RAW Windows: $e');
       return PrintResult.fail('Erro: $e');
     }
   }
 
-  /// Obtém a porta da impressora Windows (USB001, LPT1, etc.)
+  /// Obtém a porta da impressora Windows
   Future<String?> _getWindowsPrinterPort(String printerName) async {
     try {
-      final result = await Process.run(
+      // Método 1: via WMIC
+      var result = await Process.run(
         'wmic',
         ['printer', 'where', 'name="$printerName"', 'get', 'portname'],
         runInShell: true,
@@ -443,12 +440,25 @@ class ThermalPrinterService {
       
       if (result.exitCode == 0) {
         final lines = result.stdout.toString().trim().split('\n');
-        if (lines.length > 1) {
-          final port = lines[1].trim();
-          if (port.isNotEmpty && port != 'PortName') {
-            AppLogger.d('🖨️ Porta encontrada: $port');
+        for (final line in lines) {
+          final port = line.trim();
+          if (port.isNotEmpty && port != 'PortName' && !port.contains('PortName')) {
             return port;
           }
+        }
+      }
+
+      // Método 2: via PowerShell
+      result = await Process.run(
+        'powershell',
+        ['-Command', 'Get-WmiObject -Query "SELECT PortName FROM Win32_Printer WHERE Name=\'$printerName\'" | Select-Object -ExpandProperty PortName'],
+        runInShell: true,
+      );
+      
+      if (result.exitCode == 0) {
+        final port = result.stdout.toString().trim();
+        if (port.isNotEmpty) {
+          return port;
         }
       }
     } catch (e) {
@@ -457,120 +467,159 @@ class ThermalPrinterService {
     return null;
   }
 
-  /// Usa PowerShell para enviar dados RAW à impressora
-  Future<PrintResult> _openDrawerPowerShell(String printerName, List<int> data) async {
+  /// Método 2: Usar PowerShell com RawPrinterHelper
+  Future<PrintResult> _openDrawerViaPowerShell(String printerName) async {
     try {
-      // Converter bytes para string hexadecimal para PowerShell
-      final hexBytes = data.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(',');
+      // Bytes para abrir gaveta Epson TM-T20II
+      final bytes = <int>[
+        ..._cmdInit,
+        ..._cmdOpenDrawerPin2,
+      ];
+      
+      final hexBytes = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(',');
       
       final script = '''
+\$ErrorActionPreference = "Stop"
 \$bytes = [byte[]]@($hexBytes)
 \$printerName = "$printerName"
 
-# Método 1: Via .NET RawPrinterHelper
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
-public class RawPrinterHelper
+public class RawPrinter
 {
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Ansi)]
-    public class DOCINFOA
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public struct DOCINFOW
     {
-        [MarshalAs(UnmanagedType.LPStr)] public string pDocName;
-        [MarshalAs(UnmanagedType.LPStr)] public string pOutputFile;
-        [MarshalAs(UnmanagedType.LPStr)] public string pDataType;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
     }
 
-    [DllImport("winspool.Drv", EntryPoint = "OpenPrinterA", CharSet = CharSet.Ansi, SetLastError = true)]
-    public static extern bool OpenPrinter([MarshalAs(UnmanagedType.LPStr)] string szPrinter, out IntPtr hPrinter, IntPtr pd);
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
 
-    [DllImport("winspool.Drv", EntryPoint = "ClosePrinter", SetLastError = true)]
+    [DllImport("winspool.drv", SetLastError = true)]
     public static extern bool ClosePrinter(IntPtr hPrinter);
 
-    [DllImport("winspool.Drv", EntryPoint = "StartDocPrinterA", CharSet = CharSet.Ansi, SetLastError = true)]
-    public static extern bool StartDocPrinter(IntPtr hPrinter, Int32 level, [In, MarshalAs(UnmanagedType.LPStruct)] DOCINFOA di);
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, int Level, ref DOCINFOW pDocInfo);
 
-    [DllImport("winspool.Drv", EntryPoint = "EndDocPrinter", SetLastError = true)]
+    [DllImport("winspool.drv", SetLastError = true)]
     public static extern bool EndDocPrinter(IntPtr hPrinter);
 
-    [DllImport("winspool.Drv", EntryPoint = "StartPagePrinter", SetLastError = true)]
+    [DllImport("winspool.drv", SetLastError = true)]
     public static extern bool StartPagePrinter(IntPtr hPrinter);
 
-    [DllImport("winspool.Drv", EntryPoint = "EndPagePrinter", SetLastError = true)]
+    [DllImport("winspool.drv", SetLastError = true)]
     public static extern bool EndPagePrinter(IntPtr hPrinter);
 
-    [DllImport("winspool.Drv", EntryPoint = "WritePrinter", SetLastError = true)]
-    public static extern bool WritePrinter(IntPtr hPrinter, IntPtr pBytes, Int32 dwCount, out Int32 dwWritten);
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
 
-    public static bool SendBytesToPrinter(string printerName, byte[] bytes)
+    public static bool SendBytes(string printerName, byte[] data)
     {
         IntPtr hPrinter;
         if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
             return false;
 
-        var di = new DOCINFOA { pDocName = "RAW Document", pDataType = "RAW" };
-        
-        if (!StartDocPrinter(hPrinter, 1, di))
+        try
         {
-            ClosePrinter(hPrinter);
-            return false;
+            var di = new DOCINFOW();
+            di.pDocName = "Cash Drawer";
+            di.pDataType = "RAW";
+
+            if (!StartDocPrinter(hPrinter, 1, ref di))
+                return false;
+
+            try
+            {
+                if (!StartPagePrinter(hPrinter))
+                    return false;
+
+                try
+                {
+                    int written;
+                    return WritePrinter(hPrinter, data, data.Length, out written) && written == data.Length;
+                }
+                finally { EndPagePrinter(hPrinter); }
+            }
+            finally { EndDocPrinter(hPrinter); }
         }
-
-        if (!StartPagePrinter(hPrinter))
-        {
-            EndDocPrinter(hPrinter);
-            ClosePrinter(hPrinter);
-            return false;
-        }
-
-        IntPtr pUnmanagedBytes = Marshal.AllocCoTaskMem(bytes.Length);
-        Marshal.Copy(bytes, 0, pUnmanagedBytes, bytes.Length);
-
-        int written;
-        bool success = WritePrinter(hPrinter, pUnmanagedBytes, bytes.Length, out written);
-
-        Marshal.FreeCoTaskMem(pUnmanagedBytes);
-        EndPagePrinter(hPrinter);
-        EndDocPrinter(hPrinter);
-        ClosePrinter(hPrinter);
-
-        return success && written == bytes.Length;
+        finally { ClosePrinter(hPrinter); }
     }
 }
 "@
 
-\$result = [RawPrinterHelper]::SendBytesToPrinter(\$printerName, \$bytes)
-if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
+try {
+    \$result = [RawPrinter]::SendBytes(\$printerName, \$bytes)
+    if (\$result) { 
+        Write-Output "SUCCESS" 
+    } else { 
+        Write-Output "FAIL: WritePrinter returned false"
+    }
+} catch {
+    Write-Output "FAIL: \$(\$_.Exception.Message)"
+}
 ''';
 
       final result = await Process.run(
         'powershell',
-        ['-ExecutionPolicy', 'Bypass', '-Command', script],
+        ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-Command', script],
         runInShell: true,
       );
 
-      if (result.exitCode == 0 && result.stdout.toString().contains('OK')) {
-        AppLogger.i('✅ Gaveta aberta via PowerShell RAW');
+      final output = result.stdout.toString().trim();
+      AppLogger.d('PowerShell output: $output');
+      AppLogger.d('PowerShell stderr: ${result.stderr}');
+
+      if (output.contains('SUCCESS')) {
         return PrintResult.ok('Gaveta aberta');
       } else {
-        AppLogger.e('PowerShell output: ${result.stdout}');
-        AppLogger.e('PowerShell error: ${result.stderr}');
-        return PrintResult.fail('Falha ao enviar comando RAW');
+        return PrintResult.fail('PowerShell: $output');
       }
     } catch (e) {
-      AppLogger.e('Erro PowerShell: $e');
-      return PrintResult.fail('Erro: $e');
+      return PrintResult.fail('Erro PowerShell: $e');
     }
   }
 
-  /// Envia comandos ESC/POS RAW para impressora Windows
-  Future<void> _sendRawEscPosToWindowsPrinter(String printerName, List<int> command) async {
-    // Esta é uma versão simplificada, a implementação completa está em _openDrawerPowerShell
+  /// Método 3: Criar ficheiro e imprimir via Windows
+  Future<PrintResult> _openDrawerViaFile(String printerName) async {
     try {
-      await _openDrawerPowerShell(printerName, command);
+      final tempDir = Directory.systemTemp;
+      final tempFile = File('${tempDir.path}\\drawer_${DateTime.now().millisecondsSinceEpoch}.prn');
+      
+      // Comandos para Epson - tentar ambos os pinos
+      final bytes = <int>[
+        ..._cmdInit,
+        ..._cmdOpenDrawerPin2,
+        ..._cmdOpenDrawerPin5, // Tentar também o pino 5
+        ..._cmdOpenDrawerDLE,  // E o comando DLE
+      ];
+      
+      await tempFile.writeAsBytes(bytes, flush: true);
+
+      // Usar print /d para enviar directamente
+      final result = await Process.run(
+        'cmd',
+        ['/c', 'print', '/d:"$printerName"', tempFile.path],
+        runInShell: true,
+      );
+
+      // Limpar
+      try {
+        await tempFile.delete();
+      } catch (_) {}
+
+      // O comando print do Windows pode retornar 0 mesmo com avisos
+      if (result.exitCode == 0 || result.stdout.toString().toLowerCase().contains('printing')) {
+        return PrintResult.ok('Gaveta aberta');
+      } else {
+        return PrintResult.fail('Print falhou: ${result.stderr}');
+      }
     } catch (e) {
-      AppLogger.e('Erro ao enviar RAW: $e');
+      return PrintResult.fail('Erro ficheiro: $e');
     }
   }
 
@@ -600,35 +649,22 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
 
   /// Converte texto para bytes (com suporte a caracteres portugueses)
   List<int> _textToBytes(String text) {
-    // Codepage 860 (Português) ou fallback para ASCII
     final normalized = text
         .replaceAll('€', 'EUR')
-        .replaceAll('á', 'a')
-        .replaceAll('à', 'a')
-        .replaceAll('ã', 'a')
-        .replaceAll('â', 'a')
-        .replaceAll('é', 'e')
-        .replaceAll('ê', 'e')
+        .replaceAll('á', 'a').replaceAll('à', 'a').replaceAll('ã', 'a').replaceAll('â', 'a')
+        .replaceAll('é', 'e').replaceAll('ê', 'e')
         .replaceAll('í', 'i')
-        .replaceAll('ó', 'o')
-        .replaceAll('ô', 'o')
-        .replaceAll('õ', 'o')
+        .replaceAll('ó', 'o').replaceAll('ô', 'o').replaceAll('õ', 'o')
         .replaceAll('ú', 'u')
         .replaceAll('ç', 'c')
-        .replaceAll('Á', 'A')
-        .replaceAll('À', 'A')
-        .replaceAll('Ã', 'A')
-        .replaceAll('Â', 'A')
-        .replaceAll('É', 'E')
-        .replaceAll('Ê', 'E')
+        .replaceAll('Á', 'A').replaceAll('À', 'A').replaceAll('Ã', 'A').replaceAll('Â', 'A')
+        .replaceAll('É', 'E').replaceAll('Ê', 'E')
         .replaceAll('Í', 'I')
-        .replaceAll('Ó', 'O')
-        .replaceAll('Ô', 'O')
-        .replaceAll('Õ', 'O')
+        .replaceAll('Ó', 'O').replaceAll('Ô', 'O').replaceAll('Õ', 'O')
         .replaceAll('Ú', 'U')
         .replaceAll('Ç', 'C');
 
-    return normalized.codeUnits.map((c) => c > 127 ? 63 : c).toList(); // 63 = '?'
+    return normalized.codeUnits.map((c) => c > 127 ? 63 : c).toList();
   }
 
   /// Imprime talão/recibo
@@ -653,6 +689,8 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     double globalDiscount = 0,
     double globalDiscountValue = 0,
     double itemsDiscountValue = 0,
+    double? amountPaid,
+    double? change,
   }) async {
     if (_config == null || !_config!.isConfigured) {
       return PrintResult.fail('Impressora não configurada');
@@ -680,6 +718,8 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
         globalDiscount: globalDiscount,
         globalDiscountValue: globalDiscountValue,
         itemsDiscountValue: itemsDiscountValue,
+        amountPaid: amountPaid,
+        change: change,
       );
     } else {
       return await _printReceiptUsb(
@@ -707,7 +747,7 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     }
   }
 
-  /// Imprime talão via rede ESC/POS
+  /// Imprime talão via rede (ESC/POS directo)
   Future<PrintResult> _printReceiptNetwork({
     required String companyName,
     required String companyVat,
@@ -729,19 +769,19 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     double globalDiscount = 0,
     double globalDiscountValue = 0,
     double itemsDiscountValue = 0,
+    double? amountPaid,
+    double? change,
   }) async {
-    final width = _config!.paperWidth == 58 ? 32 : 48;
     final bytes = <int>[];
+    final width = _config!.charsPerLine;
 
     bytes.addAll(_cmdInit);
 
-    // Cabeçalho - Empresa
+    // Cabeçalho
     bytes.addAll(_cmdAlignCenter);
     bytes.addAll(_cmdBoldOn);
-    bytes.addAll(_cmdDoubleSize);
     bytes.addAll(_textToBytes(companyName));
     bytes.addAll(_cmdFeed1);
-    bytes.addAll(_cmdNormalSize);
     bytes.addAll(_cmdBoldOff);
     bytes.addAll(_textToBytes('NIF: $companyVat'));
     bytes.addAll(_cmdFeed1);
@@ -750,15 +790,16 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     bytes.addAll(_textToBytes(_line(width)));
     bytes.addAll(_cmdFeed1);
 
-    // Tipo de documento e número
+    // Documento
     bytes.addAll(_cmdBoldOn);
+    bytes.addAll(_cmdDoubleHeight);
     bytes.addAll(_textToBytes('$documentType $documentNumber'));
     bytes.addAll(_cmdFeed1);
+    bytes.addAll(_cmdNormalSize);
     bytes.addAll(_cmdBoldOff);
     bytes.addAll(_textToBytes('$date $time'));
     bytes.addAll(_cmdFeed1);
 
-    // ATCUD se existir
     if (atcud != null && atcud.isNotEmpty) {
       bytes.addAll(_textToBytes('ATCUD: $atcud'));
       bytes.addAll(_cmdFeed1);
@@ -767,7 +808,7 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     bytes.addAll(_textToBytes(_line(width)));
     bytes.addAll(_cmdFeed1);
 
-    // Cliente se existir
+    // Cliente
     if (customerName != null && customerName.isNotEmpty) {
       bytes.addAll(_cmdAlignLeft);
       bytes.addAll(_textToBytes('Cliente: $customerName'));
@@ -783,23 +824,20 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     // Itens
     bytes.addAll(_cmdAlignLeft);
     for (final item in items) {
-      // Nome do produto
-      bytes.addAll(_textToBytes(_truncate(item.name, width)));
+      bytes.addAll(_textToBytes(_truncate(item.name, width - 10)));
       bytes.addAll(_cmdFeed1);
       
-      // Quantidade x Preço = Total
-      final qtyStr = _formatQty(item.quantity, item.unit);
-      final priceStr = item.unitPrice.toStringAsFixed(2);
+      final qtyStr = '  ${_formatQty(item.quantity, item.unit)} x ${item.unitPrice.toStringAsFixed(2)}';
       final totalStr = item.total.toStringAsFixed(2);
-      final line = '  $qtyStr x $priceStr';
-      final padding = width - line.length - totalStr.length;
-      bytes.addAll(_textToBytes('$line${' ' * (padding > 0 ? padding : 1)}$totalStr'));
+      final spaces = width - qtyStr.length - totalStr.length;
+      bytes.addAll(_textToBytes('$qtyStr${' ' * (spaces > 0 ? spaces : 1)}$totalStr'));
       bytes.addAll(_cmdFeed1);
 
-      // Desconto do item se existir
       if (item.discount > 0) {
-        final discStr = '-${(item.total * item.discount / 100).toStringAsFixed(2)}';
-        bytes.addAll(_textToBytes('    Desc. ${item.discount.toStringAsFixed(0)}%${' ' * (width - 14 - discStr.length)}$discStr'));
+        final discStr = '    Desc. ${item.discount.toStringAsFixed(0)}%';
+        final discVal = '-${(item.total * item.discount / 100).toStringAsFixed(2)}';
+        final discSpaces = width - discStr.length - discVal.length;
+        bytes.addAll(_textToBytes('$discStr${' ' * (discSpaces > 0 ? discSpaces : 1)}$discVal'));
         bytes.addAll(_cmdFeed1);
       }
     }
@@ -810,25 +848,20 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     // Totais
     bytes.addAll(_cmdAlignRight);
 
-    // Subtotal (se houver descontos)
     if (globalDiscountValue > 0 || itemsDiscountValue > 0) {
       _addLine(bytes, 'Subtotal', '${subtotal.toStringAsFixed(2)} EUR', width);
     }
 
-    // Desconto de itens
     if (itemsDiscountValue > 0) {
       _addLine(bytes, 'Desc. artigos', '-${itemsDiscountValue.toStringAsFixed(2)} EUR', width);
     }
 
-    // Desconto global
     if (globalDiscountValue > 0) {
       _addLine(bytes, 'Desc. ${globalDiscount.toStringAsFixed(0)}%', '-${globalDiscountValue.toStringAsFixed(2)} EUR', width);
     }
 
-    // IVA
     _addLine(bytes, 'IVA', '${taxTotal.toStringAsFixed(2)} EUR', width);
 
-    // Total
     bytes.addAll(_cmdBoldOn);
     bytes.addAll(_cmdDoubleHeight);
     _addLine(bytes, 'TOTAL', '${total.toStringAsFixed(2)} EUR', width);
@@ -839,17 +872,10 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
     bytes.addAll(_textToBytes(_line(width)));
     bytes.addAll(_cmdFeed1);
 
-    // Método de pagamento
+    // Pagamento
     bytes.addAll(_cmdAlignCenter);
     bytes.addAll(_textToBytes('Pagamento: $paymentMethod'));
     bytes.addAll(_cmdFeed1);
-
-    // QR Code placeholder (impressoras com suporte)
-    if (qrCode != null && qrCode.isNotEmpty) {
-      bytes.addAll(_cmdFeed1);
-      bytes.addAll(_textToBytes('[QR Code]'));
-      bytes.addAll(_cmdFeed1);
-    }
 
     // Rodapé
     bytes.addAll(_cmdFeed1);
@@ -904,20 +930,17 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
             return pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.center,
               children: [
-                // Cabeçalho
                 pw.Text(companyName, style: pw.TextStyle(fontSize: 14, fontWeight: pw.FontWeight.bold)),
                 pw.Text('NIF: $companyVat', style: const pw.TextStyle(fontSize: 10)),
                 pw.Text(companyAddress, style: const pw.TextStyle(fontSize: 10)),
                 pw.Divider(),
                 
-                // Documento
                 pw.Text('$documentType $documentNumber', style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold)),
                 pw.Text('$date $time', style: const pw.TextStyle(fontSize: 10)),
                 if (atcud != null && atcud.isNotEmpty)
                   pw.Text('ATCUD: $atcud', style: const pw.TextStyle(fontSize: 10)),
                 pw.Divider(),
 
-                // Cliente
                 if (customerName != null && customerName.isNotEmpty) ...[
                   pw.Align(
                     alignment: pw.Alignment.centerLeft,
@@ -933,7 +956,6 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
                   pw.Divider(),
                 ],
 
-                // Itens
                 ...items.map((item) => pw.Column(
                   crossAxisAlignment: pw.CrossAxisAlignment.start,
                   children: [
@@ -957,7 +979,6 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
                 ),),
                 pw.Divider(),
 
-                // Totais
                 if (globalDiscountValue > 0 || itemsDiscountValue > 0)
                   _pdfLine('Subtotal', '${subtotal.toStringAsFixed(2)} EUR'),
                 if (itemsDiscountValue > 0)
@@ -975,11 +996,9 @@ if (\$result) { Write-Output "OK" } else { Write-Output "FAIL" }
                 ),
                 pw.Divider(),
 
-                // Pagamento
                 pw.Text('Pagamento: $paymentMethod', style: const pw.TextStyle(fontSize: 10)),
                 pw.SizedBox(height: 8),
 
-                // Rodapé
                 if (footerMessage != null && footerMessage.isNotEmpty)
                   pw.Text(footerMessage, style: const pw.TextStyle(fontSize: 9)),
                 pw.Text('Obrigado pela preferencia!', style: const pw.TextStyle(fontSize: 10)),

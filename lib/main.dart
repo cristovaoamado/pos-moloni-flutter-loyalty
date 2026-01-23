@@ -53,7 +53,8 @@ Future<void> _initHive() async {
 void main() async {
   // Garantir inicialização do Flutter
   WidgetsFlutterBinding.ensureInitialized();
-
+  // Inicializar logger COM escrita para ficheiro
+  await AppLogger.init(enableFileLogging: true);
   // Inicializar logger
   AppLogger.i('🚀 Iniciando ${AppConstants.appName}...');
 
