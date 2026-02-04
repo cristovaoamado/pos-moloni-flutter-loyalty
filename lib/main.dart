@@ -77,6 +77,7 @@ void main() async {
     
     // Registar adapter de favoritos (typeId: 10)
     if (!Hive.isAdapterRegistered(10)) {
+      
       Hive.registerAdapter(FavoriteProductModelAdapter());
       AppLogger.d('⭐ Adapter FavoriteProductModel registado');
     }

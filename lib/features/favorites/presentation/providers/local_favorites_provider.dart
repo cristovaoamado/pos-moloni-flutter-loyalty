@@ -6,6 +6,7 @@ import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/company/presentation/providers/company_provider.dart';
 import 'package:pos_moloni_app/features/favorites/data/datasources/favorites_local_datasource.dart';
 import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
+import 'package:pos_moloni_app/features/favorites/data/models/favorite_tax_model.dart';
 import 'package:pos_moloni_app/features/products/data/datasources/product_remote_datasource.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
 import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
@@ -122,6 +123,12 @@ class LocalFavoritesNotifier extends StateNotifier<LocalFavoritesState> {
       );
 
       AppLogger.i('⭐ ${favorites.length} favoritos carregados');
+      
+      // Verificar se há favoritos sem taxes (dados antigos)
+      final favoritesWithoutTaxes = favorites.where((f) => !f.hasTaxes).length;
+      if (favoritesWithoutTaxes > 0) {
+        AppLogger.w('⚠️ $favoritesWithoutTaxes favoritos sem dados de impostos - sincronização recomendada');
+      }
     } catch (e) {
       AppLogger.e('❌ Erro ao carregar favoritos', error: e);
       state = state.copyWith(
@@ -132,18 +139,11 @@ class LocalFavoritesNotifier extends StateNotifier<LocalFavoritesState> {
   }
 
   /// Adiciona um produto aos favoritos
+  /// CORRIGIDO: Agora usa FavoriteProductModel.fromProduct() que guarda taxes
   Future<void> addFavorite(Product product) async {
     try {
-      final favorite = FavoriteProductModel.fromProduct(
-        productId: product.id,
-        name: product.name,
-        reference: product.reference,
-        ean: product.ean,
-        price: product.price,
-        image: product.image,
-        categoryId: product.categoryId,
-        taxRate: product.totalTaxRate,
-      );
+      // Usar factory que guarda todas as taxes
+      final favorite = FavoriteProductModel.fromProduct(product);
 
       await _dataSource.addFavorite(favorite);
 
@@ -152,6 +152,12 @@ class LocalFavoritesNotifier extends StateNotifier<LocalFavoritesState> {
       state = state.copyWith(favorites: newFavorites);
 
       AppLogger.i('⭐ Adicionado aos favoritos: ${product.name}');
+      AppLogger.d('   - taxes guardadas: ${favorite.taxes?.length ?? 0}');
+      if (favorite.taxes != null) {
+        for (final tax in favorite.taxes!) {
+          AppLogger.d('   - tax_id: ${tax.taxId}, value: ${tax.value}%');
+        }
+      }
     } catch (e) {
       AppLogger.e('❌ Erro ao adicionar favorito', error: e);
       state = state.copyWith(error: 'Erro ao adicionar favorito');
@@ -189,7 +195,8 @@ class LocalFavoritesNotifier extends StateNotifier<LocalFavoritesState> {
     }
   }
 
-  /// Sincroniza os favoritos com a API (actualiza preços, nomes, etc.)
+  /// Sincroniza os favoritos com a API (actualiza preços, nomes, TAXES, etc.)
+  /// CORRIGIDO: Agora actualiza também os dados dos impostos
   Future<void> syncFavorites() async {
     if (state.favorites.isEmpty) {
       AppLogger.d('⭐ Nenhum favorito para sincronizar');
@@ -211,14 +218,27 @@ class LocalFavoritesNotifier extends StateNotifier<LocalFavoritesState> {
           final product = await _productDataSource.getProductByReference(fav.reference);
 
           if (product != null) {
+            // Converter taxes do produto para FavoriteTaxModel
+            final updatedTaxes = product.taxes.map((tax) => FavoriteTaxModel(
+              taxId: tax.id,
+              name: tax.name,
+              value: tax.value,
+              order: tax.order,
+              cumulative: tax.cumulative,
+            )).toList();
+
             final updated = fav.copyWithUpdatedData(
               name: product.name,
               price: product.price,
               image: product.image,
               taxRate: product.totalTaxRate,
+              measureUnit: product.measureUnit,
+              taxes: updatedTaxes, // NOVO: Actualizar taxes
             );
             updatedFavorites.add(updated);
             successCount++;
+            
+            AppLogger.d('✅ Actualizado: ${product.name} com ${updatedTaxes.length} taxes');
           } else {
             // Produto não encontrado - manter dados antigos
             updatedFavorites.add(fav);

@@ -12,6 +12,7 @@ import 'package:pos_moloni_app/features/checkout/services/receipt_generator.dart
 import 'package:pos_moloni_app/features/customers/domain/entities/customer.dart';
 import 'package:pos_moloni_app/features/document_sets/domain/entities/document_set.dart';
 import 'package:pos_moloni_app/features/loyalty/loyalty.dart';
+import 'package:pos_moloni_app/features/printer/presentation/providers/printer_provider.dart';
 
 class CheckoutDialog extends ConsumerStatefulWidget {
   const CheckoutDialog({
@@ -135,8 +136,23 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
   /// Pode finalizar se já confirmou
   bool get _canFinalize => _isConfirmed && !_isProcessing;
 
+  /// Abre a gaveta de dinheiro
+  /// Usa o mesmo provider que o pos_screen para consistência
+  Future<void> _openCashDrawer() async {
+    try {
+      final result = await ref.read(printerProvider.notifier).openCashDrawer();
+      if (!result.success) {
+        debugPrint('Aviso: Não foi possível abrir a gaveta - ${result.error}');
+      }
+    } catch (e) {
+      // Falha silenciosa - não deve impedir a venda
+      debugPrint('Erro ao abrir gaveta: $e');
+    }
+  }
+
   /// Confirma a venda (Passo 1)
   /// Regista na API de fidelização e bloqueia alterações
+  /// TAMBÉM ABRE A GAVETA DE DINHEIRO
   Future<void> _confirmSale() async {
     if (!_canConfirm || _isProcessing) return;
 
@@ -144,6 +160,12 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
       _isProcessing = true;
       _error = null;
     });
+
+    // ========== ABRIR GAVETA DE DINHEIRO ==========
+    // Abre a gaveta assim que o utilizador confirma o pagamento
+    // Isto permite que o operador prepare o troco enquanto processa
+    _openCashDrawer();
+    // ==============================================
 
     try {
       final loyaltyState = ref.read(loyaltyProvider);

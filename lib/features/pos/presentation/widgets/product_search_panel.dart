@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'package:pos_moloni_app/features/cart/presentation/providers/cart_provider.dart';
+import 'package:pos_moloni_app/core/theme/app_colors.dart';
+import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
 import 'package:pos_moloni_app/features/favorites/presentation/providers/local_favorites_provider.dart';
 import 'package:pos_moloni_app/features/products/domain/entities/product.dart';
-import 'package:pos_moloni_app/features/products/domain/entities/tax.dart';
 import 'package:pos_moloni_app/features/products/presentation/providers/product_provider.dart';
 
-/// Painel de pesquisa e grid de produtos com paginação para desktop
+/// Painel de pesquisa e seleção de produtos
 /// Mostra favoritos locais inicialmente, pesquisa na API quando há query
 class ProductSearchPanel extends ConsumerStatefulWidget {
   const ProductSearchPanel({
@@ -17,9 +17,7 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
     this.onSearchFocusLost,
   });
 
-  final Function(Product) onProductTap;
-
-  /// Callback quando o campo de pesquisa perde o foco
+  final void Function(Product product) onProductTap;
   final VoidCallback? onSearchFocusLost;
 
   @override
@@ -27,87 +25,100 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
 }
 
 class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
-  final _searchController = TextEditingController();
-  final _searchFocusNode = FocusNode();
-  bool _isInitialized = false;
-
-  // Paginação
-  static const int _columns = 8;
-  static const int _rows = 3;
-  static const int _itemsPerPage = _columns * _rows; // 24 produtos por página
+  final TextEditingController _searchController = TextEditingController();
+  final ScrollController _scrollController = ScrollController();
+  final FocusNode _searchFocusNode = FocusNode();
   
-  int _currentFavoritesPage = 0;
-  int _currentSearchPage = 0;
+  bool _showSearchResults = false;
 
   @override
   void initState() {
     super.initState();
-    _searchFocusNode.addListener(_onSearchFocusChange);
-  }
-
-  void _onSearchFocusChange() {
-    if (!_searchFocusNode.hasFocus) {
-      widget.onSearchFocusLost?.call();
-    }
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      _isInitialized = true;
-    }
+    _scrollController.addListener(_onScroll);
+    _searchFocusNode.addListener(_onSearchFocusChanged);
   }
 
   @override
   void dispose() {
-    _searchFocusNode.removeListener(_onSearchFocusChange);
     _searchController.dispose();
+    _scrollController.dispose();
+    _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
     super.dispose();
   }
 
-  void _onSearch(String query) {
-    if (query.length >= 3) {
-      _currentSearchPage = 0; // Reset página ao pesquisar
+  void _onSearchFocusChanged() {
+    if (!_searchFocusNode.hasFocus && widget.onSearchFocusLost != null) {
+      widget.onSearchFocusLost!();
+    }
+  }
+
+  void _onScroll() {
+    if (_scrollController.position.pixels >=
+        _scrollController.position.maxScrollExtent - 200) {
+      // Carregar mais produtos se estiver a pesquisar
+      if (_showSearchResults) {
+        ref.read(productProvider.notifier).loadMoreProducts();
+      }
+    }
+  }
+
+  void _onSearchChanged(String query) {
+    setState(() {
+      _showSearchResults = query.length >= 3;
+    });
+
+    if (_showSearchResults) {
       ref.read(productProvider.notifier).searchProducts(query);
-    } else if (query.isEmpty) {
-      ref.read(productProvider.notifier).clearSearchResults();
     }
   }
 
   void _clearSearch() {
     _searchController.clear();
-    _currentSearchPage = 0;
+    setState(() {
+      _showSearchResults = false;
+    });
     ref.read(productProvider.notifier).clearSearchResults();
-    setState(() {});
-    // Focar na caixa de pesquisa após limpar para nova pesquisa rápida
-    _searchFocusNode.requestFocus();
   }
 
-  /// Converte FavoriteProductModel para Product
-  Product _favoriteToProduct(FavoriteProductModel favorite) {
-    final tax = Tax(
-      id: 0,
-      name: 'IVA ${favorite.taxRate.toStringAsFixed(0)}%',
-      value: favorite.taxRate,
-    );
-
-    return Product(
-      id: favorite.productId,
-      name: favorite.name,
-      reference: favorite.reference,
-      ean: favorite.ean,
-      price: favorite.price,
-      image: favorite.image,
-      categoryId: favorite.categoryId,
-      measureUnit: favorite.measureUnit,
-      taxes: [tax],
-    );
+  void _onProductTap(Product product) {
+    widget.onProductTap(product);
   }
 
+  /// CORRIGIDO: Converte favorito para Product usando toProduct()
+  /// que inclui todos os dados dos impostos (tax_id, etc.)
   void _onFavoriteTap(FavoriteProductModel favorite) {
-    widget.onProductTap(_favoriteToProduct(favorite));
+    // Verificar se o favorito tem taxes
+    if (!favorite.hasTaxes) {
+      AppLogger.w('⚠️ Favorito "${favorite.name}" não tem dados de impostos! Recomenda-se sincronizar.');
+      // Mostrar aviso ao utilizador
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('⚠️ "${favorite.name}" pode ter IVA incorreto. Sincronize os favoritos.'),
+          duration: const Duration(seconds: 3),
+          action: SnackBarAction(
+            label: 'Sincronizar',
+            onPressed: () {
+              ref.read(localFavoritesProvider.notifier).syncFavorites();
+            },
+          ),
+        ),
+      );
+    }
+
+    // Usar método toProduct() que converte correctamente as taxes
+    final product = favorite.toProduct();
+    
+    AppLogger.d('🛒 Favorito convertido para Product:');
+    AppLogger.d('   - id: ${product.id}');
+    AppLogger.d('   - name: ${product.name}');
+    AppLogger.d('   - price: ${product.price}');
+    AppLogger.d('   - taxes: ${product.taxes.length}');
+    for (final tax in product.taxes) {
+      AppLogger.d('   - tax_id: ${tax.id}, name: ${tax.name}, value: ${tax.value}%');
+    }
+    
+    widget.onProductTap(product);
   }
 
   @override
@@ -115,50 +126,71 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     final productState = ref.watch(productProvider);
     final favoritesState = ref.watch(localFavoritesProvider);
 
-    final bool showSearchResults = productState.isLoading ||
-        productState.products.isNotEmpty ||
-        productState.hasScannedProduct ||
-        _searchController.text.length >= 3;
-
     return Column(
       children: [
         // Barra de pesquisa
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: TextField(
-            controller: _searchController,
-            focusNode: _searchFocusNode,
-            decoration: InputDecoration(
-              labelText: 'Pesquisa de artigos',
-              prefixIcon: const Icon(Icons.search),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-              suffixIcon: _searchController.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear),
-                      onPressed: _clearSearch,
-                    )
-                  : null,
-            ),
-            onChanged: (value) {
-              setState(() {});
-              _onSearch(value);
-            },
-            onSubmitted: _onSearch,
-          ),
-        ),
-
+        _buildSearchBar(),
+        
         // Conteúdo
         Expanded(
-          child: showSearchResults
-              ? _buildSearchContent(productState, favoritesState)
+          child: _showSearchResults
+              ? _buildSearchResults(productState, favoritesState)
               : _buildFavoritesContent(favoritesState),
         ),
       ],
     );
   }
 
+  Widget _buildSearchBar() {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        focusNode: _searchFocusNode,
+        onChanged: _onSearchChanged,
+        style: const TextStyle(fontSize: 16),
+        decoration: InputDecoration(
+          hintText: 'Pesquisar produtos...',
+          hintStyle: TextStyle(color: Colors.grey.shade500),
+          prefixIcon: Icon(Icons.search, color: Colors.grey.shade600),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: Icon(Icons.clear, color: Colors.grey.shade600),
+                  onPressed: _clearSearch,
+                )
+              : null,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide(color: Colors.grey.shade300),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: const BorderSide(color: AppColors.primary, width: 2),
+          ),
+          filled: true,
+          fillColor: Colors.grey.shade50,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        ),
+      ),
+    );
+  }
+
   // ═══════════════════════════════════════════════════════════════════════════
-  // CONTEÚDO DOS FAVORITOS LOCAIS COM PAGINAÇÃO
+  // FAVORITOS
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildFavoritesContent(LocalFavoritesState state) {
@@ -170,132 +202,242 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       return _buildEmptyFavoritesState();
     }
 
-    final totalItems = state.favorites.length;
-    final totalPages = (totalItems / _itemsPerPage).ceil();
-    
-    // Garantir que a página actual é válida
-    if (_currentFavoritesPage >= totalPages) {
-      _currentFavoritesPage = totalPages - 1;
-    }
-    if (_currentFavoritesPage < 0) {
-      _currentFavoritesPage = 0;
-    }
-
-    final startIndex = _currentFavoritesPage * _itemsPerPage;
-    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
-    final pageItems = state.favorites.sublist(startIndex, endIndex);
-
     return Column(
       children: [
-        // Cabeçalho dos favoritos
-        _buildFavoritesHeader(state, totalPages),
-
-        // Grid de favoritos (página actual)
+        // Header
+        _buildFavoritesHeader(state),
+        // Grid
         Expanded(
-          child: _buildFavoritesGrid(pageItems),
-        ),
-
-        // Barra de paginação
-        if (totalPages > 1)
-          _buildPaginationBar(
-            currentPage: _currentFavoritesPage,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            onPrevious: () {
-              setState(() {
-                _currentFavoritesPage--;
-              });
-            },
-            onNext: () {
-              setState(() {
-                _currentFavoritesPage++;
-              });
-            },
-            onFirst: () {
-              setState(() {
-                _currentFavoritesPage = 0;
-              });
-            },
-            onLast: () {
-              setState(() {
-                _currentFavoritesPage = totalPages - 1;
-              });
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(12),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: state.favorites.length,
+            itemBuilder: (context, index) {
+              return _buildFavoriteCard(state.favorites[index]);
             },
           ),
+        ),
       ],
     );
   }
 
-  Widget _buildFavoritesHeader(LocalFavoritesState state, int totalPages) {
+  Widget _buildFavoritesHeader(LocalFavoritesState state) {
+    // Contar favoritos sem taxes (dados antigos que precisam de sync)
+    final favoritesWithoutTaxes = state.favorites.where((f) => !f.hasTaxes).length;
+    final needsSync = favoritesWithoutTaxes > 0;
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: needsSync ? Colors.orange.shade50 : Colors.amber.shade50,
+        border: Border(
+          bottom: BorderSide(
+            color: needsSync ? Colors.orange.shade200 : Colors.amber.shade200,
+          ),
+        ),
+      ),
       child: Row(
         children: [
-          const Icon(Icons.star, size: 20, color: Colors.amber),
+          Icon(
+            Icons.star, 
+            color: needsSync ? Colors.orange : Colors.amber, 
+            size: 20,
+          ),
           const SizedBox(width: 8),
-          Text(
+          const Text(
             'Favoritos',
             style: TextStyle(
-              fontSize: 16,
               fontWeight: FontWeight.w600,
-              color: Theme.of(context).colorScheme.onSurface,
+              fontSize: 15,
             ),
           ),
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: Colors.amber.shade100,
-              borderRadius: BorderRadius.circular(12),
+              color: needsSync ? Colors.orange : Colors.amber,
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Text(
               '${state.count}',
-              style: TextStyle(
+              style: const TextStyle(
+                color: Colors.white,
                 fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Colors.amber.shade800,
+                fontWeight: FontWeight.bold,
               ),
             ),
           ),
+          // Aviso de sincronização necessária
+          if (needsSync) ...[
+            const SizedBox(width: 8),
+            Tooltip(
+              message: '$favoritesWithoutTaxes favoritos precisam de sincronização',
+              child: Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.orange.shade700,
+                size: 18,
+              ),
+            ),
+          ],
           const Spacer(),
           if (state.isSyncing)
-            const Padding(
-              padding: EdgeInsets.only(right: 8),
-              child: SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+            const SizedBox(
+              width: 16,
+              height: 16,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          else
+            IconButton(
+              icon: Icon(
+                Icons.sync, 
+                size: 20,
+                color: needsSync ? Colors.orange.shade700 : null,
               ),
+              onPressed: () {
+                ref.read(localFavoritesProvider.notifier).syncFavorites();
+              },
+              tooltip: needsSync 
+                  ? 'Sincronizar ($favoritesWithoutTaxes precisam de actualização)'
+                  : 'Actualizar preços',
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
             ),
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
-            onPressed: state.isSyncing
-                ? null
-                : () => ref.read(localFavoritesProvider.notifier).syncFavorites(),
-            tooltip: 'Actualizar preços',
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildFavoritesGrid(List<FavoriteProductModel> favorites) {
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      physics: const NeverScrollableScrollPhysics(), // Sem scroll - paginação
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _columns,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
+  Widget _buildFavoriteCard(FavoriteProductModel favorite) {
+    // Indicar visualmente se o favorito não tem taxes
+    final needsSync = !favorite.hasTaxes;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: needsSync 
+            ? BorderSide(color: Colors.orange.shade300, width: 1)
+            : BorderSide.none,
       ),
-      itemCount: favorites.length,
-      itemBuilder: (context, index) {
-        return _FavoriteCard(
-          favorite: favorites[index],
-          onTap: () => _onFavoriteTap(favorites[index]),
-        );
-      },
+      child: InkWell(
+        onTap: () => _onFavoriteTap(favorite),
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Imagem
+                  Expanded(
+                    child: Center(
+                      child: favorite.imageUrl != null
+                          ? Image.network(
+                              favorite.imageUrl!,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => _buildPlaceholderIcon(),
+                            )
+                          : _buildPlaceholderIcon(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Nome
+                  Text(
+                    favorite.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  // Preço e IVA
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          favorite.formattedPriceWithTax,
+                          style: const TextStyle(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                      // Badge de IVA
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: needsSync 
+                              ? Colors.orange.shade100 
+                              : Colors.grey.shade200,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          '${favorite.taxRate.toStringAsFixed(0)}%',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: needsSync 
+                                ? Colors.orange.shade800 
+                                : Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // Badge de favorito
+            Positioned(
+              top: 4,
+              right: 4,
+              child: Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade100,
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(
+                  Icons.star,
+                  color: Colors.amber,
+                  size: 14,
+                ),
+              ),
+            ),
+            // Indicador de sync necessário
+            if (needsSync)
+              Positioned(
+                top: 4,
+                left: 4,
+                child: Tooltip(
+                  message: 'Sincronização necessária',
+                  child: Container(
+                    padding: const EdgeInsets.all(2),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      Icons.sync_problem,
+                      color: Colors.orange.shade700,
+                      size: 12,
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -304,7 +446,11 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.star_border, size: 64, color: Colors.grey.shade400),
+          Icon(
+            Icons.star_border,
+            size: 64,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
             'Sem favoritos',
@@ -316,8 +462,12 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
           ),
           const SizedBox(height: 8),
           Text(
-            'Pesquise produtos e adicione aos favoritos',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade500),
+            'Pesquise produtos e mantenha pressionado\npara adicionar aos favoritos',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              color: Colors.grey.shade500,
+            ),
           ),
         ],
       ),
@@ -325,136 +475,231 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // CONTEÚDO DA PESQUISA COM PAGINAÇÃO
+  // RESULTADOS DA PESQUISA
   // ═══════════════════════════════════════════════════════════════════════════
 
-  Widget _buildSearchContent(ProductState productState, LocalFavoritesState favoritesState) {
-    if (productState.isLoading) {
+  Widget _buildSearchResults(ProductState productState, LocalFavoritesState favoritesState) {
+    if (productState.isLoading && productState.products.isEmpty) {
       return const Center(child: CircularProgressIndicator());
-    }
-
-    if (productState.hasScannedProduct) {
-      return _buildScannedProductView(productState, favoritesState);
     }
 
     if (productState.products.isEmpty) {
       return _buildEmptySearchState();
     }
 
-    final totalItems = productState.products.length;
-    final totalPages = (totalItems / _itemsPerPage).ceil();
-    
-    if (_currentSearchPage >= totalPages) {
-      _currentSearchPage = totalPages - 1;
+    // Produto scaneado em destaque
+    if (productState.hasScannedProduct) {
+      return _buildScannedProductView(productState.scannedProduct!, favoritesState);
     }
-    if (_currentSearchPage < 0) {
-      _currentSearchPage = 0;
-    }
-
-    final startIndex = _currentSearchPage * _itemsPerPage;
-    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
-    final pageItems = productState.products.sublist(startIndex, endIndex);
 
     return Column(
       children: [
-        // Header com resultados
-        _buildSearchHeader(totalItems, totalPages),
-
-        // Grid de produtos (página actual)
+        // Header dos resultados
+        _buildSearchResultsHeader(productState),
+        // Grid
         Expanded(
-          child: _buildProductGrid(pageItems, favoritesState),
-        ),
-
-        // Barra de paginação
-        if (totalPages > 1)
-          _buildPaginationBar(
-            currentPage: _currentSearchPage,
-            totalPages: totalPages,
-            totalItems: totalItems,
-            onPrevious: () {
-              setState(() {
-                _currentSearchPage--;
-              });
-            },
-            onNext: () {
-              setState(() {
-                _currentSearchPage++;
-              });
-            },
-            onFirst: () {
-              setState(() {
-                _currentSearchPage = 0;
-              });
-            },
-            onLast: () {
-              setState(() {
-                _currentSearchPage = totalPages - 1;
-              });
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.all(12),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              childAspectRatio: 0.85,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+            ),
+            itemCount: productState.products.length + (productState.isLoadingMore ? 1 : 0),
+            itemBuilder: (context, index) {
+              if (index >= productState.products.length) {
+                return const Center(child: CircularProgressIndicator());
+              }
+              final product = productState.products[index];
+              final isFavorite = favoritesState.isFavorite(product.id);
+              return _buildProductCard(product, isFavorite);
             },
           ),
+        ),
       ],
     );
   }
 
-  Widget _buildSearchHeader(int totalItems, int totalPages) {
+  Widget _buildSearchResultsHeader(ProductState state) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: Theme.of(context).colorScheme.primaryContainer.withOpacity(0.3),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withOpacity(0.1),
+        border: Border(
+          bottom: BorderSide(color: AppColors.primary.withOpacity(0.2)),
+        ),
+      ),
       child: Row(
         children: [
-          Icon(Icons.search, size: 18, color: Theme.of(context).colorScheme.primary),
+          const Icon(Icons.search, size: 18, color: AppColors.primary),
           const SizedBox(width: 8),
           Text(
-            '$totalItems resultados',
-            style: const TextStyle(fontWeight: FontWeight.w600),
+            '${state.products.length} resultados',
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+            ),
           ),
+          if (state.hasMore) ...[
+            Text(
+              ' de ${state.totalCount}',
+              style: TextStyle(
+                fontSize: 13,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
           const Spacer(),
           TextButton.icon(
             onPressed: _clearSearch,
-            icon: const Icon(Icons.close, size: 18),
-            label: const Text('Limpar'),
+            icon: const Icon(Icons.arrow_back, size: 16),
+            label: const Text('Favoritos'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildScannedProductView(ProductState productState, LocalFavoritesState favoritesState) {
-    final product = productState.scannedProduct!;
-    final isFavorite = favoritesState.isFavorite(product.id);
+  Widget _buildProductCard(Product product, bool isFavorite) {
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(10),
+        side: isFavorite
+            ? const BorderSide(color: Colors.amber, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        onTap: () => _onProductTap(product),
+        onLongPress: () => _toggleProductFavorite(product),
+        borderRadius: BorderRadius.circular(10),
+        child: Stack(
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(10),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Imagem
+                  Expanded(
+                    child: Center(
+                      child: product.imageUrl != null
+                          ? Image.network(
+                              product.imageUrl!,
+                              fit: BoxFit.contain,
+                              errorBuilder: (_, __, ___) => _buildPlaceholderIcon(),
+                            )
+                          : _buildPlaceholderIcon(),
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // Nome
+                  Text(
+                    product.name,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 4),
+                  // Preço
+                  Text(
+                    product.formattedPriceWithTax,
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Badge de favorito
+            Positioned(
+              top: 4,
+              right: 4,
+              child: GestureDetector(
+                onTap: () => _toggleProductFavorite(product),
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: BoxDecoration(
+                    color: isFavorite ? Colors.amber.shade100 : Colors.grey.shade200,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    isFavorite ? Icons.star : Icons.star_border,
+                    color: isFavorite ? Colors.amber : Colors.grey.shade500,
+                    size: 16,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
+  void _toggleProductFavorite(Product product) async {
+    final wasAdded = await ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
+    
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            wasAdded 
+                ? '⭐ ${product.name} adicionado aos favoritos'
+                : '${product.name} removido dos favoritos',
+          ),
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Widget _buildScannedProductView(Product product, LocalFavoritesState favoritesState) {
+    final isFavorite = favoritesState.isFavorite(product.id);
+    
     return Column(
       children: [
+        // Header
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          color: Colors.green.withOpacity(0.1),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: Colors.green.shade50,
           child: Row(
             children: [
               const Icon(Icons.qr_code_scanner, color: Colors.green),
               const SizedBox(width: 8),
-              const Text('Produto scaneado', style: TextStyle(fontWeight: FontWeight.w600)),
+              const Text(
+                'Produto encontrado',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  color: Colors.green,
+                ),
+              ),
               const Spacer(),
               TextButton.icon(
-                onPressed: () {
-                  ref.read(productProvider.notifier).clearScannedProduct();
-                },
-                icon: const Icon(Icons.close, size: 18),
-                label: const Text('Limpar'),
+                onPressed: _clearSearch,
+                icon: const Icon(Icons.arrow_back, size: 16),
+                label: const Text('Favoritos'),
               ),
             ],
           ),
         ),
+        // Produto em destaque
         Expanded(
           child: Center(
             child: SizedBox(
               width: 200,
-              height: 250,
-              child: _ProductCard(
-                product: product,
-                onTap: () => widget.onProductTap(product),
-                isFavorite: isFavorite,
-                onFavoriteToggle: () => _toggleFavorite(product),
-              ),
+              child: _buildProductCard(product, isFavorite),
             ),
           ),
         ),
@@ -467,452 +712,35 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.search_off, size: 64, color: Colors.grey.shade400),
+          Icon(
+            Icons.search_off,
+            size: 64,
+            color: Colors.grey.shade400,
+          ),
           const SizedBox(height: 16),
           Text(
             'Nenhum produto encontrado',
-            style: TextStyle(fontSize: 16, color: Colors.grey.shade600),
+            style: TextStyle(
+              fontSize: 16,
+              color: Colors.grey.shade600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TextButton.icon(
+            onPressed: _clearSearch,
+            icon: const Icon(Icons.arrow_back),
+            label: const Text('Voltar aos favoritos'),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildProductGrid(List<Product> products, LocalFavoritesState favoritesState) {
-    return GridView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: _columns,
-        childAspectRatio: 0.85,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-      ),
-      itemCount: products.length,
-      itemBuilder: (context, index) {
-        final product = products[index];
-        final isFavorite = favoritesState.isFavorite(product.id);
-        return _ProductCard(
-          product: product,
-          onTap: () => widget.onProductTap(product),
-          isFavorite: isFavorite,
-          onFavoriteToggle: () => _toggleFavorite(product),
-        );
-      },
-    );
-  }
-
-  void _toggleFavorite(Product product) {
-    ref.read(localFavoritesProvider.notifier).toggleFavorite(product);
-  }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // BARRA DE PAGINAÇÃO
-  // ═══════════════════════════════════════════════════════════════════════════
-
-  Widget _buildPaginationBar({
-    required int currentPage,
-    required int totalPages,
-    required int totalItems,
-    required VoidCallback onPrevious,
-    required VoidCallback onNext,
-    required VoidCallback onFirst,
-    required VoidCallback onLast,
-  }) {
-    final hasPrevious = currentPage > 0;
-    final hasNext = currentPage < totalPages - 1;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surfaceContainerHighest,
-        border: Border(
-          top: BorderSide(color: Theme.of(context).dividerColor),
-        ),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Primeira página
-          IconButton(
-            onPressed: hasPrevious ? onFirst : null,
-            icon: const Icon(Icons.first_page),
-            tooltip: 'Primeira página',
-            iconSize: 28,
-          ),
-          // Página anterior
-          IconButton(
-            onPressed: hasPrevious ? onPrevious : null,
-            icon: const Icon(Icons.chevron_left),
-            tooltip: 'Página anterior',
-            iconSize: 32,
-          ),
-          // Info da página
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              'Página ${currentPage + 1} de $totalPages',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).colorScheme.primary,
-              ),
-            ),
-          ),
-          // Próxima página
-          IconButton(
-            onPressed: hasNext ? onNext : null,
-            icon: const Icon(Icons.chevron_right),
-            tooltip: 'Próxima página',
-            iconSize: 32,
-          ),
-          // Última página
-          IconButton(
-            onPressed: hasNext ? onLast : null,
-            icon: const Icon(Icons.last_page),
-            tooltip: 'Última página',
-            iconSize: 28,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CARD DE FAVORITO
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _FavoriteCard extends ConsumerWidget {
-  const _FavoriteCard({
-    required this.favorite,
-    required this.onTap,
-  });
-
-  final FavoriteProductModel favorite;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart = ref.watch(cartProvider.notifier).containsProduct(favorite.productId);
-
-    return Card(
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Imagem de fundo
-            favorite.imageUrl != null
-                ? Image.network(
-                    favorite.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
-                  )
-                : _buildPlaceholderImage(context),
-
-            // Overlay com nome e preço
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.brown.withOpacity(0.8),
-                      Colors.brown.withOpacity(0.8),
-                    ],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      favorite.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        color: Colors.white,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          favorite.formattedPriceWithTax,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
-                        ),
-                        if (favorite.isWeighable)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.withOpacity(0.8),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text(
-                              'kg',
-                              style: TextStyle(
-                                fontSize: 9,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Badge favorito
-            Positioned(
-              top: 4,
-              left: 4,
-              child: Container(
-                padding: const EdgeInsets.all(3),
-                decoration: BoxDecoration(
-                  color: Colors.amber,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.3),
-                      blurRadius: 4,
-                      offset: const Offset(0, 2),
-                    ),
-                  ],
-                ),
-                child: const Icon(Icons.star, size: 10, color: Colors.white),
-              ),
-            ),
-
-            // Badge carrinho
-            if (isInCart)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.shopping_cart,
-                    size: 10,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderImage(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.inventory_2,
-        size: 32,
-        color: Theme.of(context).colorScheme.outline,
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// CARD DE PRODUTO (pesquisa)
-// ═══════════════════════════════════════════════════════════════════════════
-
-class _ProductCard extends ConsumerWidget {
-  const _ProductCard({
-    required this.product,
-    required this.onTap,
-    required this.isFavorite,
-    required this.onFavoriteToggle,
-  });
-
-  final Product product;
-  final VoidCallback onTap;
-  final bool isFavorite;
-  final VoidCallback onFavoriteToggle;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final isInCart = ref.watch(cartProvider.notifier).containsProduct(product.id);
-
-    return Card(
-      elevation: 2,
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onFavoriteToggle,
-        child: Stack(
-          fit: StackFit.expand,
-          children: [
-            // Imagem de fundo
-            product.hasImage
-                ? Image.network(
-                    product.imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => _buildPlaceholderImage(context),
-                  )
-                : _buildPlaceholderImage(context),
-
-            // Overlay com nome e preço
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.brown.withOpacity(0.8),
-                      Colors.brown.withOpacity(0.8),
-                    ],
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      product.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 11,
-                        color: Colors.white,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          product.formattedPriceWithTax,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 12,
-                            color: Colors.white,
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '${product.totalTaxRate.toStringAsFixed(0)}%',
-                            style: const TextStyle(fontSize: 9, color: Colors.white),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            // Botão favorito
-            Positioned(
-              top: 4,
-              left: 4,
-              child: GestureDetector(
-                onTap: onFavoriteToggle,
-                child: Container(
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    color: isFavorite ? Colors.amber : Colors.black.withOpacity(0.4),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    isFavorite ? Icons.star : Icons.star_border,
-                    size: 12,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-
-            // Badge carrinho
-            if (isInCart)
-              Positioned(
-                top: 4,
-                right: 4,
-                child: Container(
-                  padding: const EdgeInsets.all(4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primary,
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                  child: Icon(
-                    Icons.shopping_cart,
-                    size: 10,
-                    color: Theme.of(context).colorScheme.onPrimary,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPlaceholderImage(BuildContext context) {
-    return Container(
-      color: Theme.of(context).colorScheme.surfaceContainerHighest,
-      child: Icon(
-        Icons.inventory_2,
-        size: 32,
-        color: Theme.of(context).colorScheme.outline,
-      ),
+  Widget _buildPlaceholderIcon() {
+    return Icon(
+      Icons.inventory_2_outlined,
+      size: 40,
+      color: Colors.grey.shade400,
     );
   }
 }
