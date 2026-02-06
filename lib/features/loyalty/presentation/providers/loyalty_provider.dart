@@ -11,6 +11,7 @@ import '../../domain/entities/loyalty_customer.dart';
 
 const String _keyLoyaltyEnabled = 'loyalty_enabled';
 const String _keyLoyaltyCardPrefix = 'loyalty_card_prefix';
+const String _keyLoyaltyApiKey = 'loyalty_api_key';
 const String _keyPosIdentifier = 'pos_identifier';
 
 const String _defaultCardPrefix = '269';
@@ -26,6 +27,7 @@ class LoyaltyState {
   final int? pendingSaleId;
   final RegisterSaleResult? lastSaleResult;
   final String apiUrl;
+  final String apiKey;
   final String cardPrefix;
   final bool isConnected;
   
@@ -42,6 +44,7 @@ class LoyaltyState {
     this.pendingSaleId,
     this.lastSaleResult,
     this.apiUrl = '',
+    this.apiKey = '',
     this.cardPrefix = _defaultCardPrefix,
     this.isConnected = false,
     this.availableCoupons = const [],
@@ -60,6 +63,7 @@ class LoyaltyState {
     RegisterSaleResult? lastSaleResult,
     bool clearLastSaleResult = false,
     String? apiUrl,
+    String? apiKey,
     String? cardPrefix,
     bool? isConnected,
     List<AvailableCoupon>? availableCoupons,
@@ -76,6 +80,7 @@ class LoyaltyState {
       pendingSaleId: clearPendingSale ? null : (pendingSaleId ?? this.pendingSaleId),
       lastSaleResult: clearLastSaleResult ? null : (lastSaleResult ?? this.lastSaleResult),
       apiUrl: apiUrl ?? this.apiUrl,
+      apiKey: apiKey ?? this.apiKey,
       cardPrefix: cardPrefix ?? this.cardPrefix,
       isConnected: isConnected ?? this.isConnected,
       availableCoupons: clearCustomer ? const [] : (availableCoupons ?? this.availableCoupons),
@@ -88,6 +93,12 @@ class LoyaltyState {
   bool isLoyaltyCard(String barcode) {
     return barcode.startsWith(cardPrefix);
   }
+
+  /// Verifica se a API Key está configurada
+  bool get hasApiKey => apiKey.isNotEmpty;
+
+  /// Verifica se está totalmente configurado
+  bool get isFullyConfigured => apiUrl.isNotEmpty && apiKey.isNotEmpty;
 
   /// Calcula pontos que serão ganhos na compra
   int calculatePointsToEarn(double amount) {
@@ -154,30 +165,44 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
       
       // Usar URL do Settings se disponível, senão usar SharedPreferences (legado)
       String apiUrl = '';
+      String apiKey = '';
       final settings = _settingsState.settings;
+      
       if (settings?.loyaltyApiUrl != null && settings!.loyaltyApiUrl!.isNotEmpty) {
         apiUrl = settings.loyaltyApiUrl!;
       } else {
         // Fallback para SharedPreferences (compatibilidade)
         apiUrl = prefs.getString('loyalty_api_url') ?? '';
       }
+
+      // API Key - Settings ou SharedPreferences
+      if (settings?.loyaltyApiKey != null && settings!.loyaltyApiKey!.isNotEmpty) {
+        apiKey = settings.loyaltyApiKey!;
+      } else {
+        apiKey = prefs.getString(_keyLoyaltyApiKey) ?? '';
+      }
       
       // Enabled e CardPrefix do Settings ou SharedPreferences
       bool isEnabled = settings?.loyaltyEnabled ?? prefs.getBool(_keyLoyaltyEnabled) ?? false;
       String cardPrefix = settings?.loyaltyCardPrefix ?? prefs.getString(_keyLoyaltyCardPrefix) ?? _defaultCardPrefix;
 
+      // Configurar datasource
       if (apiUrl.isNotEmpty) {
         _dataSource.setBaseUrl(apiUrl);
+      }
+      if (apiKey.isNotEmpty) {
+        _dataSource.setApiKey(apiKey);
       }
 
       state = state.copyWith(
         apiUrl: apiUrl,
+        apiKey: apiKey,
         isEnabled: isEnabled,
         cardPrefix: cardPrefix,
       );
 
-      // Testar conexão se estiver activo e tiver URL
-      if (isEnabled && apiUrl.isNotEmpty) {
+      // Testar conexão se estiver activo e tiver URL + API Key
+      if (isEnabled && apiUrl.isNotEmpty && apiKey.isNotEmpty) {
         await testConnection();
       }
     } catch (e) {
@@ -192,8 +217,14 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
     final settings = _ref.read(settingsProvider).settings;
     if (settings?.loyaltyApiUrl != null && settings!.loyaltyApiUrl!.isNotEmpty) {
       _dataSource.setBaseUrl(settings.loyaltyApiUrl!);
+      
+      if (settings.loyaltyApiKey != null && settings.loyaltyApiKey!.isNotEmpty) {
+        _dataSource.setApiKey(settings.loyaltyApiKey!);
+      }
+      
       state = state.copyWith(
         apiUrl: settings.loyaltyApiUrl!,
+        apiKey: settings.loyaltyApiKey ?? state.apiKey,
         isEnabled: settings.loyaltyEnabled ?? state.isEnabled,
         cardPrefix: settings.loyaltyCardPrefix ?? state.cardPrefix,
       );
@@ -206,7 +237,7 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
     await prefs.setBool(_keyLoyaltyEnabled, enabled);
     state = state.copyWith(isEnabled: enabled);
 
-    if (enabled && state.apiUrl.isNotEmpty) {
+    if (enabled && state.apiUrl.isNotEmpty && state.apiKey.isNotEmpty) {
       await testConnection();
     }
   }
@@ -215,6 +246,14 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
   Future<void> setApiUrl(String url) async {
     _dataSource.setBaseUrl(url);
     state = state.copyWith(apiUrl: url);
+  }
+
+  /// Define a API Key (usado pelo widget de settings)
+  Future<void> setApiKey(String key) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_keyLoyaltyApiKey, key);
+    _dataSource.setApiKey(key);
+    state = state.copyWith(apiKey: key);
   }
 
   /// Define o prefixo dos cartões
@@ -234,12 +273,30 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
       return false;
     }
 
+    if (state.apiKey.isEmpty) {
+      state = state.copyWith(
+        isConnected: false,
+        error: 'API Key não configurada',
+      );
+      return false;
+    }
+
     state = state.copyWith(isLoading: true, error: null);
     
     try {
-      final connected = await _dataSource.testConnection();
-      state = state.copyWith(isLoading: false, isConnected: connected);
-      return connected;
+      final result = await _dataSource.testConnection();
+      
+      if (result.success) {
+        state = state.copyWith(isLoading: false, isConnected: true);
+        return true;
+      } else {
+        state = state.copyWith(
+          isLoading: false,
+          isConnected: false,
+          error: result.error ?? 'Falha na autenticação',
+        );
+        return false;
+      }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
@@ -255,6 +312,10 @@ class LoyaltyNotifier extends StateNotifier<LoyaltyState> {
   /// Identifica cliente pelo código de barras do cartão (com cupões)
   Future<bool> identifyCustomerByBarcode(String barcode) async {
     if (!state.isEnabled) return false;
+    if (!state.isFullyConfigured) {
+      state = state.copyWith(error: 'API não configurada');
+      return false;
+    }
 
     state = state.copyWith(isLoading: true, error: null);
 

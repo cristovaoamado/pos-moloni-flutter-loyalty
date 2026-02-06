@@ -13,8 +13,10 @@ class LoyaltySettingsWidget extends ConsumerStatefulWidget {
 
 class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
   final _apiUrlController = TextEditingController();
+  final _apiKeyController = TextEditingController();
   final _cardPrefixController = TextEditingController();
   bool _isTesting = false;
+  bool _showApiKey = false;
 
   @override
   void initState() {
@@ -25,12 +27,14 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
   void _loadSettings() {
     final state = ref.read(loyaltyProvider);
     _apiUrlController.text = state.apiUrl;
+    _apiKeyController.text = state.apiKey;
     _cardPrefixController.text = state.cardPrefix;
   }
 
   @override
   void dispose() {
     _apiUrlController.dispose();
+    _apiKeyController.dispose();
     _cardPrefixController.dispose();
     super.dispose();
   }
@@ -80,25 +84,59 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
               // URL da API
               TextField(
                 controller: _apiUrlController,
-                decoration: InputDecoration(
+                decoration: const InputDecoration(
                   labelText: 'URL da API Loyalty',
                   hintText: 'http://localhost:5000/api',
-                  prefixIcon: const Icon(Icons.link),
-                  border: const OutlineInputBorder(),
-                  suffixIcon: IconButton(
-                    icon: _isTesting
-                        ? const SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh),
-                    onPressed: _isTesting ? null : _testConnection,
-                    tooltip: 'Testar ligação',
-                  ),
+                  prefixIcon: Icon(Icons.link),
+                  border: OutlineInputBorder(),
+                  helperText: 'Endereço do servidor de fidelização',
                 ),
                 onChanged: (value) {
                   ref.read(loyaltyProvider.notifier).setApiUrl(value);
+                },
+              ),
+
+              const SizedBox(height: 16),
+
+              // API Key
+              TextField(
+                controller: _apiKeyController,
+                obscureText: !_showApiKey,
+                decoration: InputDecoration(
+                  labelText: 'API Key',
+                  hintText: 'pk_xxxxxxxxxxxxxxxx',
+                  prefixIcon: const Icon(Icons.key),
+                  border: const OutlineInputBorder(),
+                  helperText: 'Chave de autenticação do POS',
+                  suffixIcon: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(_showApiKey ? Icons.visibility_off : Icons.visibility),
+                        onPressed: () {
+                          setState(() => _showApiKey = !_showApiKey);
+                        },
+                        tooltip: _showApiKey ? 'Esconder' : 'Mostrar',
+                      ),
+                      if (_apiKeyController.text.isNotEmpty)
+                        IconButton(
+                          icon: const Icon(Icons.copy),
+                          onPressed: () {
+                            // Copiar para clipboard
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('API Key copiada'),
+                                duration: Duration(seconds: 1),
+                              ),
+                            );
+                          },
+                          tooltip: 'Copiar',
+                        ),
+                    ],
+                  ),
+                ),
+                onChanged: (value) {
+                  ref.read(loyaltyProvider.notifier).setApiKey(value);
                 },
               ),
 
@@ -195,6 +233,27 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
                       '• Os pontos são acumulados após finalizar a venda',
                       style: TextStyle(fontSize: 13),
                     ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Icon(Icons.vpn_key, color: Colors.orange[700], size: 20),
+                        const SizedBox(width: 8),
+                        Text(
+                          'API Key',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Colors.orange[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      '• A API Key é gerada no dashboard de fidelização\n'
+                      '• Menu: Configurações → API Keys → Criar nova\n'
+                      '• Copie a chave e cole no campo acima',
+                      style: TextStyle(fontSize: 13),
+                    ),
                   ],
                 ),
               ),
@@ -234,6 +293,16 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
       );
     }
 
+    // Verificar se tem API Key configurada
+    if (state.apiKey.isEmpty) {
+      return const Chip(
+        avatar: Icon(Icons.key_off, color: Colors.white, size: 18),
+        label: Text('Sem API Key'),
+        backgroundColor: Colors.orange,
+        labelStyle: TextStyle(color: Colors.white, fontSize: 12),
+      );
+    }
+
     return const Chip(
       avatar: Icon(Icons.warning, color: Colors.white, size: 18),
       label: Text('Sem ligação'),
@@ -243,6 +312,27 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
   }
 
   Future<void> _testConnection() async {
+    // Validar que tem URL e API Key
+    if (_apiUrlController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Configure o URL da API'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
+    if (_apiKeyController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Configure a API Key'),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
+
     setState(() => _isTesting = true);
     
     await ref.read(loyaltyProvider.notifier).testConnection();
@@ -256,7 +346,7 @@ class _LoyaltySettingsWidgetState extends ConsumerState<LoyaltySettingsWidget> {
           content: Text(
             state.isConnected
                 ? '✓ Ligação estabelecida com sucesso!'
-                : '✗ Não foi possível ligar à API',
+                : '✗ ${state.error ?? "Não foi possível ligar à API"}',
           ),
           backgroundColor: state.isConnected ? Colors.green : Colors.red,
         ),

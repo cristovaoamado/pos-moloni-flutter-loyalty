@@ -11,6 +11,7 @@ class AppSettingsModel extends AppSettings {
     super.printerMac,
     super.username,
     super.loyaltyApiUrl,
+    super.loyaltyApiKey,
     super.loyaltyEnabled,
     super.loyaltyCardPrefix,
   });
@@ -26,6 +27,7 @@ class AppSettingsModel extends AppSettings {
       printerMac: entity.printerMac,
       username: entity.username,
       loyaltyApiUrl: entity.loyaltyApiUrl,
+      loyaltyApiKey: entity.loyaltyApiKey,
       loyaltyEnabled: entity.loyaltyEnabled,
       loyaltyCardPrefix: entity.loyaltyCardPrefix,
     );
@@ -42,6 +44,7 @@ class AppSettingsModel extends AppSettings {
       printerMac: json['printerMac'] as String?,
       username: json['username'] as String?,
       loyaltyApiUrl: json['loyaltyApiUrl'] as String?,
+      loyaltyApiKey: json['loyaltyApiKey'] as String?,
       loyaltyEnabled: json['loyaltyEnabled'] as bool?,
       loyaltyCardPrefix: json['loyaltyCardPrefix'] as String?,
     );
@@ -58,6 +61,7 @@ class AppSettingsModel extends AppSettings {
       'printerMac': printerMac,
       'username': username,
       'loyaltyApiUrl': loyaltyApiUrl,
+      'loyaltyApiKey': loyaltyApiKey,
       'loyaltyEnabled': loyaltyEnabled,
       'loyaltyCardPrefix': loyaltyCardPrefix,
     };
@@ -74,6 +78,7 @@ class AppSettingsModel extends AppSettings {
       printerMac: printerMac,
       username: username,
       loyaltyApiUrl: loyaltyApiUrl,
+      loyaltyApiKey: loyaltyApiKey,
       loyaltyEnabled: loyaltyEnabled,
       loyaltyCardPrefix: loyaltyCardPrefix,
     );
@@ -89,6 +94,7 @@ class AppSettingsModel extends AppSettings {
     String? printerMac,
     String? username,
     String? loyaltyApiUrl,
+    String? loyaltyApiKey,
     bool? loyaltyEnabled,
     String? loyaltyCardPrefix,
   }) {
@@ -101,6 +107,7 @@ class AppSettingsModel extends AppSettings {
       printerMac: printerMac ?? this.printerMac,
       username: username ?? this.username,
       loyaltyApiUrl: loyaltyApiUrl ?? this.loyaltyApiUrl,
+      loyaltyApiKey: loyaltyApiKey ?? this.loyaltyApiKey,
       loyaltyEnabled: loyaltyEnabled ?? this.loyaltyEnabled,
       loyaltyCardPrefix: loyaltyCardPrefix ?? this.loyaltyCardPrefix,
     );

@@ -10,10 +10,19 @@ final loyaltyRemoteDataSourceProvider = Provider<LoyaltyRemoteDataSource>((ref) 
   return LoyaltyRemoteDataSource();
 });
 
+/// Resultado do teste de conexão
+class ConnectionTestResult {
+  final bool success;
+  final String? error;
+  
+  const ConnectionTestResult({required this.success, this.error});
+}
+
 /// Datasource para comunicação com a API Loyalty
 class LoyaltyRemoteDataSource {
   late final Dio _dio;
   String _baseUrl = 'http://localhost:5000/api';
+  String _apiKey = '';
 
   LoyaltyRemoteDataSource() {
     _dio = Dio(BaseOptions(
@@ -24,6 +33,31 @@ class LoyaltyRemoteDataSource {
         'Accept': 'application/json',
       },
     ));
+    
+    // Interceptor para adicionar API Key a todos os requests
+    _dio.interceptors.add(InterceptorsWrapper(
+      onRequest: (options, handler) {
+        if (_apiKey.isNotEmpty) {
+          options.headers['X-API-Key'] = _apiKey;
+        }
+        return handler.next(options);
+      },
+      onError: (error, handler) {
+        // Log de erros para debug
+        if (error.response?.statusCode == 401) {
+          // API Key inválida ou expirada
+          return handler.reject(
+            DioException(
+              requestOptions: error.requestOptions,
+              response: error.response,
+              type: error.type,
+              error: 'API Key inválida ou expirada',
+            ),
+          );
+        }
+        return handler.next(error);
+      },
+    ));
   }
 
   /// Configura o URL base da API
@@ -31,13 +65,22 @@ class LoyaltyRemoteDataSource {
     _baseUrl = url.endsWith('/') ? url.substring(0, url.length - 1) : url;
   }
 
+  /// Configura a API Key para autenticação
+  void setApiKey(String apiKey) {
+    _apiKey = apiKey;
+  }
+
   String get baseUrl => _baseUrl;
+  String get apiKey => _apiKey;
+  bool get hasApiKey => _apiKey.isNotEmpty;
 
   // ==================== POS ====================
 
   /// Busca informação do cartão com cupões disponíveis
   /// Endpoint: GET /api/pos/card/{identifier}
   Future<PosCardInfoResult?> getPosCardInfo(String identifier) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.get('$_baseUrl/pos/card/$identifier');
       
@@ -52,6 +95,9 @@ class LoyaltyRemoteDataSource {
       if (e.response?.statusCode == 404) {
         return null;
       }
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       throw LoyaltyApiException('Erro ao buscar cartão: ${e.message}');
     }
   }
@@ -59,6 +105,8 @@ class LoyaltyRemoteDataSource {
   /// Busca informação do cartão por código de barras (endpoint alternativo)
   /// Endpoint: GET /api/cards/barcode/{barcode}
   Future<CardInfoResponse?> getCardByBarcode(String barcode) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.get('$_baseUrl/cards/barcode/$barcode');
       
@@ -73,6 +121,9 @@ class LoyaltyRemoteDataSource {
       if (e.response?.statusCode == 404) {
         return null;
       }
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       throw LoyaltyApiException('Erro ao buscar cartão: ${e.message}');
     }
   }
@@ -80,6 +131,8 @@ class LoyaltyRemoteDataSource {
   /// Pesquisa clientes por termo
   /// Endpoint: GET /api/customers/search?term={term}
   Future<List<LoyaltyCustomerModel>> searchCustomers(String term) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.get(
         '$_baseUrl/customers/search',
@@ -97,6 +150,9 @@ class LoyaltyRemoteDataSource {
       }
       return [];
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       throw LoyaltyApiException('Erro ao pesquisar clientes: ${e.message}');
     }
   }
@@ -110,6 +166,8 @@ class LoyaltyRemoteDataSource {
     required String couponCode,
     required List<CheckoutItem> items,
   }) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.post(
         '$_baseUrl/pos/coupon-discount/$cardIdentifier',
@@ -129,6 +187,9 @@ class LoyaltyRemoteDataSource {
       }
       return null;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       final message = _extractErrorMessage(e);
       throw LoyaltyApiException(message);
     }
@@ -139,6 +200,8 @@ class LoyaltyRemoteDataSource {
   /// Passo 1: Registar venda (botão "Confirmar")
   /// Endpoint: POST /api/pos/confirm
   Future<RegisterSaleResult> registerSale(RegisterSaleRequest request) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.post(
         '$_baseUrl/pos/confirm',
@@ -154,6 +217,9 @@ class LoyaltyRemoteDataSource {
       }
       throw LoyaltyApiException('Erro ao registar venda');
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       final message = _extractErrorMessage(e);
       throw LoyaltyApiException(message);
     }
@@ -162,6 +228,8 @@ class LoyaltyRemoteDataSource {
   /// Passo 2: Finalizar venda (botão "Finalizar")
   /// Endpoint: POST /api/pos/sync
   Future<SaleResponse> completeSale(CompleteSaleRequest request) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.post(
         '$_baseUrl/pos/sync',
@@ -191,6 +259,9 @@ class LoyaltyRemoteDataSource {
       }
       throw LoyaltyApiException('Erro ao finalizar venda');
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       final message = _extractErrorMessage(e);
       throw LoyaltyApiException(message);
     }
@@ -199,6 +270,8 @@ class LoyaltyRemoteDataSource {
   /// Cancelar venda pendente
   /// Endpoint: POST /api/pos/cancel
   Future<bool> cancelSale(CancelSaleRequest request) async {
+    _ensureApiKey();
+    
     try {
       final response = await _dio.post(
         '$_baseUrl/pos/cancel',
@@ -214,6 +287,9 @@ class LoyaltyRemoteDataSource {
       }
       return false;
     } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        throw LoyaltyApiException('API Key inválida ou expirada');
+      }
       final message = _extractErrorMessage(e);
       throw LoyaltyApiException(message);
     }
@@ -221,18 +297,68 @@ class LoyaltyRemoteDataSource {
 
   // ==================== Utilitários ====================
 
-  /// Testa a conexão com a API
-  Future<bool> testConnection() async {
+  /// Testa a conexão com a API (valida também a API Key)
+  Future<ConnectionTestResult> testConnection() async {
+    if (_apiKey.isEmpty) {
+      return const ConnectionTestResult(
+        success: false,
+        error: 'API Key não configurada',
+      );
+    }
+
     try {
-      final response = await _dio.get(
-        '$_baseUrl/dashboard/stats',
+      // Usar endpoint de validação da API Key
+      final response = await _dio.post(
+        '$_baseUrl/auth/api-keys/validate',
         options: Options(
           receiveTimeout: const Duration(seconds: 5),
+          headers: {'X-API-Key': _apiKey},
         ),
       );
-      return response.statusCode == 200;
+      
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['valid'] == true) {
+          return const ConnectionTestResult(success: true);
+        }
+        return ConnectionTestResult(
+          success: false,
+          error: data['message'] ?? 'API Key inválida',
+        );
+      }
+      return const ConnectionTestResult(
+        success: false,
+        error: 'Erro ao validar API Key',
+      );
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 401) {
+        return const ConnectionTestResult(
+          success: false,
+          error: 'API Key inválida ou expirada',
+        );
+      }
+      if (e.response?.statusCode == 400) {
+        return ConnectionTestResult(
+          success: false,
+          error: e.response?.data?['message'] ?? 'API Key não fornecida',
+        );
+      }
+      return ConnectionTestResult(
+        success: false,
+        error: 'Não foi possível conectar ao servidor: ${e.message}',
+      );
     } catch (e) {
-      return false;
+      return ConnectionTestResult(
+        success: false,
+        error: 'Erro de conexão: $e',
+      );
+    }
+  }
+
+  /// Verifica se a API Key está configurada
+  void _ensureApiKey() {
+    if (_apiKey.isEmpty) {
+      throw LoyaltyApiException('API Key não configurada');
     }
   }
 

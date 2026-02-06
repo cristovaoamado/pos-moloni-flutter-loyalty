@@ -12,6 +12,7 @@ class AppSettings extends Equatable {
     this.defaultMargin,
     this.printerMac,
     this.loyaltyApiUrl,
+    this.loyaltyApiKey,
     this.loyaltyEnabled,
     this.loyaltyCardPrefix,
   });
@@ -25,6 +26,7 @@ class AppSettings extends Equatable {
   
   // Loyalty Card Settings
   final String? loyaltyApiUrl;
+  final String? loyaltyApiKey;
   final bool? loyaltyEnabled;
   final String? loyaltyCardPrefix;
 
@@ -37,7 +39,10 @@ class AppSettings extends Equatable {
 
   /// Verifica se as configurações de fidelização estão preenchidas
   bool get isLoyaltyConfigured {
-    return loyaltyApiUrl != null && loyaltyApiUrl!.isNotEmpty;
+    return loyaltyApiUrl != null && 
+           loyaltyApiUrl!.isNotEmpty &&
+           loyaltyApiKey != null &&
+           loyaltyApiKey!.isNotEmpty;
   }
 
   @override
@@ -50,10 +55,11 @@ class AppSettings extends Equatable {
         defaultMargin,
         printerMac,
         loyaltyApiUrl,
+        loyaltyApiKey,
         loyaltyEnabled,
         loyaltyCardPrefix,
       ];
 
   @override
-  String toString() => 'AppSettings(apiUrl: $apiUrl, clientId: $clientId, hasSecret: ${clientSecret.isNotEmpty}, loyaltyApiUrl: $loyaltyApiUrl)';
+  String toString() => 'AppSettings(apiUrl: $apiUrl, clientId: $clientId, hasSecret: ${clientSecret.isNotEmpty}, loyaltyApiUrl: $loyaltyApiUrl, hasApiKey: ${loyaltyApiKey?.isNotEmpty ?? false})';
 }
