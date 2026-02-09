@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
+import 'package:characters/characters.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'package:pos_moloni_app/core/utils/logger.dart';
@@ -82,12 +83,11 @@ class ThermalPrinterService {
   
   // Comandos de abertura de gaveta para EPSON TM-T20II
   // ESC p m t1 t2: m=pino(0/1), t1=ON time, t2=OFF time
-  // Pino 2 (conector drawer kick)
+  // Tempos: t1*2ms ON, t2*2ms OFF
+  // Pino 2 (conector drawer kick) - m=0
   static const List<int> _cmdOpenDrawerPin2 = [0x1B, 0x70, 0x00, 0x19, 0xFA]; // ESC p 0 25 250
-  // Pino 5 (alternativo)
+  // Pino 5 (alternativo) - m=1
   static const List<int> _cmdOpenDrawerPin5 = [0x1B, 0x70, 0x01, 0x19, 0xFA]; // ESC p 1 25 250
-  // Comando DLE (alternativo para algumas impressoras)
-  static const List<int> _cmdOpenDrawerDLE = [0x10, 0x14, 0x01, 0x00, 0x01]; // DLE DC4
 
   /// Configura a impressora
   void configure(PrinterConfig config) {
@@ -331,163 +331,61 @@ class ThermalPrinterService {
   }
 
   /// Abre gaveta via impressora USB no Windows
-  /// Usa múltiplos métodos para garantir compatibilidade com Epson TM-T20II
+  /// NOVA IMPLEMENTAÇÃO: Usa RawPrinterHelper directamente via PowerShell
   Future<PrintResult> _openDrawerUsb() async {
     if (!Platform.isWindows) {
       return PrintResult.fail('Abertura de gaveta USB só suportada no Windows');
     }
 
-    try {
-      final printerName = _config!.name;
-      AppLogger.d('🗄️ Abrindo gaveta USB: $printerName');
+    final printerName = _config!.name;
+    AppLogger.i('🗄️ Abrindo gaveta USB: $printerName');
 
-      // Método 1: Tentar via porta da impressora (mais directo)
-      var result = await _openDrawerViaPort(printerName);
-      if (result.success) {
-        AppLogger.i('✅ Gaveta aberta via porta');
-        return result;
-      }
-      AppLogger.w('Método porta falhou: ${result.error}');
+    // Tentar primeiro o pino 2, depois o pino 5
+    var result = await _sendRawBytesToPrinter(printerName, [
+      ..._cmdInit,
+      ..._cmdOpenDrawerPin2,
+    ]);
 
-      // Método 2: Tentar via PowerShell RawPrinterHelper
-      result = await _openDrawerViaPowerShell(printerName);
-      if (result.success) {
-        AppLogger.i('✅ Gaveta aberta via PowerShell');
-        return result;
-      }
-      AppLogger.w('Método PowerShell falhou: ${result.error}');
-
-      // Método 3: Tentar via ficheiro temporário e print
-      result = await _openDrawerViaFile(printerName);
-      if (result.success) {
-        AppLogger.i('✅ Gaveta aberta via ficheiro');
-        return result;
-      }
-      AppLogger.w('Método ficheiro falhou: ${result.error}');
-
-      return PrintResult.fail('Não foi possível abrir a gaveta. Verifique a conexão.');
-    } catch (e) {
-      AppLogger.e('Erro ao abrir gaveta USB: $e');
-      return PrintResult.fail('Erro: $e');
+    if (result.success) {
+      AppLogger.i('✅ Gaveta aberta (pino 2)');
+      return result;
     }
+
+    AppLogger.w('Pino 2 falhou, tentando pino 5...');
+    
+    result = await _sendRawBytesToPrinter(printerName, [
+      ..._cmdInit,
+      ..._cmdOpenDrawerPin5,
+    ]);
+
+    if (result.success) {
+      AppLogger.i('✅ Gaveta aberta (pino 5)');
+      return result;
+    }
+
+    AppLogger.e('❌ Ambos os pinos falharam');
+    return PrintResult.fail('Não foi possível abrir a gaveta: ${result.error}');
   }
 
-  /// Método 1: Enviar comandos directamente para a porta da impressora
-  Future<PrintResult> _openDrawerViaPort(String printerName) async {
+  /// Envia bytes RAW directamente para a impressora Windows
+  /// Este é o método mais fiável para comandos ESC/POS
+  Future<PrintResult> _sendRawBytesToPrinter(String printerName, List<int> bytes) async {
     try {
-      // Obter porta da impressora
-      final port = await _getWindowsPrinterPort(printerName);
-      if (port == null) {
-        return PrintResult.fail('Porta não encontrada');
-      }
-
-      AppLogger.d('🗄️ Porta encontrada: $port');
-
-      // Criar ficheiro temporário com comandos
-      final tempDir = Directory.systemTemp;
-      final tempFile = File('${tempDir.path}\\drawer_${DateTime.now().millisecondsSinceEpoch}.bin');
+      // Escapar o nome da impressora para PowerShell
+      final escapedName = printerName.replaceAll("'", "''");
       
-      // Comandos para Epson TM-T20II
-      final bytes = <int>[
-        ..._cmdInit,
-        ..._cmdOpenDrawerPin2,
-      ];
-      
-      await tempFile.writeAsBytes(bytes, flush: true);
-
-      // Enviar para a porta
-      ProcessResult result;
-      if (port.toUpperCase().startsWith('USB')) {
-        // Para portas USB, usar o nome da impressora directamente
-        result = await Process.run(
-          'cmd',
-          ['/c', 'copy', '/b', tempFile.path, '"\\\\localhost\\$printerName"'],
-          runInShell: true,
-        );
-      } else {
-        // Para outras portas (COM, LPT)
-        result = await Process.run(
-          'cmd',
-          ['/c', 'copy', '/b', tempFile.path, port],
-          runInShell: true,
-        );
-      }
-
-      // Limpar ficheiro temporário
-      try {
-        await tempFile.delete();
-      } catch (_) {}
-
-      if (result.exitCode == 0) {
-        return PrintResult.ok('Gaveta aberta');
-      } else {
-        return PrintResult.fail('Falha: ${result.stderr}');
-      }
-    } catch (e) {
-      return PrintResult.fail('Erro: $e');
-    }
-  }
-
-  /// Obtém a porta da impressora Windows
-  Future<String?> _getWindowsPrinterPort(String printerName) async {
-    try {
-      // Método 1: via WMIC
-      var result = await Process.run(
-        'wmic',
-        ['printer', 'where', 'name="$printerName"', 'get', 'portname'],
-        runInShell: true,
-      );
-      
-      if (result.exitCode == 0) {
-        final lines = result.stdout.toString().trim().split('\n');
-        for (final line in lines) {
-          final port = line.trim();
-          if (port.isNotEmpty && port != 'PortName' && !port.contains('PortName')) {
-            return port;
-          }
-        }
-      }
-
-      // Método 2: via PowerShell
-      result = await Process.run(
-        'powershell',
-        ['-Command', 'Get-WmiObject -Query "SELECT PortName FROM Win32_Printer WHERE Name=\'$printerName\'" | Select-Object -ExpandProperty PortName'],
-        runInShell: true,
-      );
-      
-      if (result.exitCode == 0) {
-        final port = result.stdout.toString().trim();
-        if (port.isNotEmpty) {
-          return port;
-        }
-      }
-    } catch (e) {
-      AppLogger.e('Erro ao obter porta: $e');
-    }
-    return null;
-  }
-
-  /// Método 2: Usar PowerShell com RawPrinterHelper
-  Future<PrintResult> _openDrawerViaPowerShell(String printerName) async {
-    try {
-      // Bytes para abrir gaveta Epson TM-T20II
-      final bytes = <int>[
-        ..._cmdInit,
-        ..._cmdOpenDrawerPin2,
-      ];
-      
+      // Converter bytes para formato PowerShell
       final hexBytes = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(',');
       
+      // Script PowerShell que usa a API do Windows directamente
       final script = '''
 \$ErrorActionPreference = "Stop"
-\$bytes = [byte[]]@($hexBytes)
-\$printerName = "$printerName"
 
 Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
 
-public class RawPrinter
+public class RawPrinterHelper
 {
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     public struct DOCINFOW
@@ -518,108 +416,107 @@ public class RawPrinter
     [DllImport("winspool.drv", SetLastError = true)]
     public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
 
-    public static bool SendBytes(string printerName, byte[] data)
+    public static string SendBytesToPrinter(string printerName, byte[] data)
     {
-        IntPtr hPrinter;
+        IntPtr hPrinter = IntPtr.Zero;
+        
         if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
-            return false;
+        {
+            int err = Marshal.GetLastWin32Error();
+            return "FAIL:OpenPrinter failed with error " + err;
+        }
 
         try
         {
             var di = new DOCINFOW();
-            di.pDocName = "Cash Drawer";
+            di.pDocName = "Cash Drawer Command";
             di.pDataType = "RAW";
+            di.pOutputFile = null;
 
             if (!StartDocPrinter(hPrinter, 1, ref di))
-                return false;
+            {
+                int err = Marshal.GetLastWin32Error();
+                return "FAIL:StartDocPrinter failed with error " + err;
+            }
 
             try
             {
                 if (!StartPagePrinter(hPrinter))
-                    return false;
+                {
+                    int err = Marshal.GetLastWin32Error();
+                    return "FAIL:StartPagePrinter failed with error " + err;
+                }
 
                 try
                 {
-                    int written;
-                    return WritePrinter(hPrinter, data, data.Length, out written) && written == data.Length;
+                    int written = 0;
+                    if (!WritePrinter(hPrinter, data, data.Length, out written))
+                    {
+                        int err = Marshal.GetLastWin32Error();
+                        return "FAIL:WritePrinter failed with error " + err;
+                    }
+                    
+                    if (written != data.Length)
+                    {
+                        return "FAIL:WritePrinter wrote " + written + " of " + data.Length + " bytes";
+                    }
+                    
+                    return "SUCCESS";
                 }
-                finally { EndPagePrinter(hPrinter); }
+                finally
+                {
+                    EndPagePrinter(hPrinter);
+                }
             }
-            finally { EndDocPrinter(hPrinter); }
+            finally
+            {
+                EndDocPrinter(hPrinter);
+            }
         }
-        finally { ClosePrinter(hPrinter); }
+        finally
+        {
+            ClosePrinter(hPrinter);
+        }
     }
 }
 "@
 
-try {
-    \$result = [RawPrinter]::SendBytes(\$printerName, \$bytes)
-    if (\$result) { 
-        Write-Output "SUCCESS" 
-    } else { 
-        Write-Output "FAIL: WritePrinter returned false"
-    }
-} catch {
-    Write-Output "FAIL: \$(\$_.Exception.Message)"
-}
+\$bytes = [byte[]]@($hexBytes)
+\$result = [RawPrinterHelper]::SendBytesToPrinter('$escapedName', \$bytes)
+Write-Output \$result
 ''';
 
+      AppLogger.d('🗄️ Executando PowerShell para enviar ${bytes.length} bytes...');
+      
       final result = await Process.run(
         'powershell',
-        ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-Command', script],
+        ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-NonInteractive', '-Command', script],
         runInShell: true,
       );
 
       final output = result.stdout.toString().trim();
-      AppLogger.d('PowerShell output: $output');
-      AppLogger.d('PowerShell stderr: ${result.stderr}');
+      final stderr = result.stderr.toString().trim();
+      
+      AppLogger.d('🗄️ PowerShell stdout: $output');
+      if (stderr.isNotEmpty) {
+        AppLogger.d('🗄️ PowerShell stderr: $stderr');
+      }
 
-      if (output.contains('SUCCESS')) {
-        return PrintResult.ok('Gaveta aberta');
+      if (output.startsWith('SUCCESS')) {
+        return PrintResult.ok('Comando enviado');
+      } else if (output.startsWith('FAIL:')) {
+        final errorMsg = output.substring(5);
+        return PrintResult.fail(errorMsg);
       } else {
-        return PrintResult.fail('PowerShell: $output');
+        // Pode haver warnings do PowerShell antes do resultado
+        if (output.contains('SUCCESS')) {
+          return PrintResult.ok('Comando enviado');
+        }
+        return PrintResult.fail('Resposta inesperada: $output');
       }
     } catch (e) {
-      return PrintResult.fail('Erro PowerShell: $e');
-    }
-  }
-
-  /// Método 3: Criar ficheiro e imprimir via Windows
-  Future<PrintResult> _openDrawerViaFile(String printerName) async {
-    try {
-      final tempDir = Directory.systemTemp;
-      final tempFile = File('${tempDir.path}\\drawer_${DateTime.now().millisecondsSinceEpoch}.prn');
-      
-      // Comandos para Epson - tentar ambos os pinos
-      final bytes = <int>[
-        ..._cmdInit,
-        ..._cmdOpenDrawerPin2,
-        ..._cmdOpenDrawerPin5, // Tentar também o pino 5
-        ..._cmdOpenDrawerDLE,  // E o comando DLE
-      ];
-      
-      await tempFile.writeAsBytes(bytes, flush: true);
-
-      // Usar print /d para enviar directamente
-      final result = await Process.run(
-        'cmd',
-        ['/c', 'print', '/d:"$printerName"', tempFile.path],
-        runInShell: true,
-      );
-
-      // Limpar
-      try {
-        await tempFile.delete();
-      } catch (_) {}
-
-      // O comando print do Windows pode retornar 0 mesmo com avisos
-      if (result.exitCode == 0 || result.stdout.toString().toLowerCase().contains('printing')) {
-        return PrintResult.ok('Gaveta aberta');
-      } else {
-        return PrintResult.fail('Print falhou: ${result.stderr}');
-      }
-    } catch (e) {
-      return PrintResult.fail('Erro ficheiro: $e');
+      AppLogger.e('❌ Erro ao enviar bytes: $e');
+      return PrintResult.fail('Erro: $e');
     }
   }
 
@@ -649,25 +546,36 @@ try {
 
   /// Converte texto para bytes (com suporte a caracteres portugueses)
   List<int> _textToBytes(String text) {
-    final normalized = text
-        .replaceAll('€', 'EUR')
-        .replaceAll('á', 'a').replaceAll('à', 'a').replaceAll('ã', 'a').replaceAll('â', 'a')
-        .replaceAll('é', 'e').replaceAll('ê', 'e')
-        .replaceAll('í', 'i')
-        .replaceAll('ó', 'o').replaceAll('ô', 'o').replaceAll('õ', 'o')
-        .replaceAll('ú', 'u')
-        .replaceAll('ç', 'c')
-        .replaceAll('Á', 'A').replaceAll('À', 'A').replaceAll('Ã', 'A').replaceAll('Â', 'A')
-        .replaceAll('É', 'E').replaceAll('Ê', 'E')
-        .replaceAll('Í', 'I')
-        .replaceAll('Ó', 'O').replaceAll('Ô', 'O').replaceAll('Õ', 'O')
-        .replaceAll('Ú', 'U')
-        .replaceAll('Ç', 'C');
+    // Codepage 860 (Português) - mapeamento básico
+    final map = <String, int>{
+      'á': 0xA0, 'à': 0x85, 'â': 0x83, 'ã': 0xC6,
+      'é': 0x82, 'è': 0x8A, 'ê': 0x88,
+      'í': 0xA1, 'ì': 0x8D,
+      'ó': 0xA2, 'ò': 0x95, 'ô': 0x93, 'õ': 0xE4,
+      'ú': 0xA3, 'ù': 0x97,
+      'ç': 0x87,
+      'Á': 0xB5, 'À': 0xB7, 'Â': 0xB6, 'Ã': 0xC7,
+      'É': 0x90, 'È': 0xD4, 'Ê': 0xD2,
+      'Í': 0xD6, 'Ì': 0xDE,
+      'Ó': 0xE0, 'Ò': 0xE3, 'Ô': 0xE2, 'Õ': 0xE5,
+      'Ú': 0xE9, 'Ù': 0xEB,
+      'Ç': 0x80,
+      '€': 0xEE,
+    };
 
-    return normalized.codeUnits.map((c) => c > 127 ? 63 : c).toList();
+    final bytes = <int>[];
+    for (final char in text.characters) {
+      if (map.containsKey(char)) {
+        bytes.add(map[char]!);
+      } else {
+        final code = char.codeUnitAt(0);
+        bytes.add(code < 256 ? code : 0x3F); // ? para caracteres não suportados
+      }
+    }
+    return bytes;
   }
 
-  /// Imprime talão/recibo
+  /// Imprime talão completo
   Future<PrintResult> printReceipt({
     required String companyName,
     required String companyVat,
@@ -689,8 +597,6 @@ try {
     double globalDiscount = 0,
     double globalDiscountValue = 0,
     double itemsDiscountValue = 0,
-    double? amountPaid,
-    double? change,
   }) async {
     if (_config == null || !_config!.isConfigured) {
       return PrintResult.fail('Impressora não configurada');
@@ -718,8 +624,6 @@ try {
         globalDiscount: globalDiscount,
         globalDiscountValue: globalDiscountValue,
         itemsDiscountValue: itemsDiscountValue,
-        amountPaid: amountPaid,
-        change: change,
       );
     } else {
       return await _printReceiptUsb(
@@ -747,7 +651,7 @@ try {
     }
   }
 
-  /// Imprime talão via rede (ESC/POS directo)
+  /// Imprime talão via rede (ESC/POS)
   Future<PrintResult> _printReceiptNetwork({
     required String companyName,
     required String companyVat,
@@ -769,16 +673,14 @@ try {
     double globalDiscount = 0,
     double globalDiscountValue = 0,
     double itemsDiscountValue = 0,
-    double? amountPaid,
-    double? change,
   }) async {
-    final bytes = <int>[];
     final width = _config!.charsPerLine;
+    final bytes = <int>[];
 
     bytes.addAll(_cmdInit);
+    bytes.addAll(_cmdAlignCenter);
 
     // Cabeçalho
-    bytes.addAll(_cmdAlignCenter);
     bytes.addAll(_cmdBoldOn);
     bytes.addAll(_textToBytes(companyName));
     bytes.addAll(_cmdFeed1);
@@ -787,16 +689,18 @@ try {
     bytes.addAll(_cmdFeed1);
     bytes.addAll(_textToBytes(companyAddress));
     bytes.addAll(_cmdFeed1);
+
     bytes.addAll(_textToBytes(_line(width)));
     bytes.addAll(_cmdFeed1);
 
     // Documento
-    bytes.addAll(_cmdBoldOn);
     bytes.addAll(_cmdDoubleHeight);
+    bytes.addAll(_cmdBoldOn);
     bytes.addAll(_textToBytes('$documentType $documentNumber'));
     bytes.addAll(_cmdFeed1);
     bytes.addAll(_cmdNormalSize);
     bytes.addAll(_cmdBoldOff);
+
     bytes.addAll(_textToBytes('$date $time'));
     bytes.addAll(_cmdFeed1);
 
@@ -824,9 +728,9 @@ try {
     // Itens
     bytes.addAll(_cmdAlignLeft);
     for (final item in items) {
-      bytes.addAll(_textToBytes(_truncate(item.name, width - 10)));
+      bytes.addAll(_textToBytes(_truncate(item.name, width)));
       bytes.addAll(_cmdFeed1);
-      
+
       final qtyStr = '  ${_formatQty(item.quantity, item.unit)} x ${item.unitPrice.toStringAsFixed(2)}';
       final totalStr = item.total.toStringAsFixed(2);
       final spaces = width - qtyStr.length - totalStr.length;
