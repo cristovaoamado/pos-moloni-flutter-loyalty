@@ -11,6 +11,7 @@ import 'package:pos_moloni_app/app.dart';
 import 'package:pos_moloni_app/core/constants/app_constants.dart';
 import 'package:pos_moloni_app/core/utils/logger.dart';
 import 'package:pos_moloni_app/features/favorites/data/models/favorite_product_model.dart';
+import 'package:pos_moloni_app/features/favorites/data/models/favorite_tax_model.dart';
 import 'package:pos_moloni_app/features/suspended_sales/data/suspended_sales_storage.dart';
 
 /// Inicializa o Hive no diretório correto para cada plataforma
@@ -75,11 +76,21 @@ void main() async {
     // REGISTAR ADAPTADORES HIVE (ANTES de abrir qualquer box)
     // ═══════════════════════════════════════════════════════════════════════
     
-    // Registar adapter de favoritos (typeId: 10)
-    if (!Hive.isAdapterRegistered(10)) {
-      
+    // ═══════════════════════════════════════════════════════════════════════
+    // REGISTAR ADAPTADORES HIVE (ANTES de abrir qualquer box)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    // IMPORTANTE: Registar FavoriteTaxModelAdapter PRIMEIRO (typeId: 21)
+    // porque FavoriteProductModel contém List<FavoriteTaxModel>
+    if (!Hive.isAdapterRegistered(21)) {
+      Hive.registerAdapter(FavoriteTaxModelAdapter());
+      AppLogger.d('⭐ Adapter FavoriteTaxModel registado (typeId: 21)');
+    }
+
+    // Registar adapter de favoritos (typeId: 20)
+    if (!Hive.isAdapterRegistered(20)) {
       Hive.registerAdapter(FavoriteProductModelAdapter());
-      AppLogger.d('⭐ Adapter FavoriteProductModel registado');
+      AppLogger.d('⭐ Adapter FavoriteProductModel registado (typeId: 20)');
     }
 
     // Inicializar storage de vendas suspensas (regista os seus adaptadores)

@@ -212,7 +212,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             controller: _scrollController,
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
+              crossAxisCount: 6,
               childAspectRatio: 0.85,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
@@ -502,7 +502,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             controller: _scrollController,
             padding: const EdgeInsets.all(12),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
+              crossAxisCount: 6,
               childAspectRatio: 0.85,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
