@@ -367,95 +367,157 @@ class ThermalPrinterService {
   }
 
   /// Envia bytes RAW directamente para a impressora Windows
-  /// Método simples: cria ficheiro binário e usa "print /d:" para enviar
+  /// Usa a API winspool.drv via PowerShell (método profissional)
   Future<PrintResult> _sendRawBytesToPrinter(String printerName, List<int> bytes) async {
     try {
       AppLogger.d('🗄️ Impressora: $printerName');
       AppLogger.d('🗄️ Bytes a enviar: ${bytes.length}');
       
-      // Criar ficheiro temporário com os bytes
-      final tempDir = Directory.systemTemp;
-      final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final tempFile = File('${tempDir.path}\\drawer_$timestamp.bin');
+      // Escapar nome da impressora para PowerShell
+      final escapedName = printerName.replaceAll("'", "''");
       
-      await tempFile.writeAsBytes(bytes, flush: true);
-      AppLogger.d('🗄️ Ficheiro temporário criado: ${tempFile.path}');
+      // Converter bytes para array PowerShell
+      final bytesArray = bytes.join(',');
       
-      // Método 1: Usar "copy /b" para copiar para a share da impressora
-      var result = await Process.run(
-        'cmd',
-        ['/c', 'copy', '/b', tempFile.path, '\\\\localhost\\$printerName'],
-        runInShell: true,
-      );
+      // Script PowerShell que usa winspool.drv directamente
+      final script = '''
+\$ErrorActionPreference = "Stop"
+
+# Definir a classe RawPrinterHelper
+Add-Type -TypeDefinition @"
+using System;
+using System.Runtime.InteropServices;
+
+public class RawPrinterHelper
+{
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public class DOCINFOW
+    {
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
+    }
+
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, int Level, [In] DOCINFOW pDocInfo);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
+}
+"@ -Language CSharp
+
+try {
+    \$printerName = '$escapedName'
+    \$data = [byte[]]@($bytesArray)
+    
+    # Abrir impressora
+    \$hPrinter = [IntPtr]::Zero
+    \$result = [RawPrinterHelper]::OpenPrinter(\$printerName, [ref]\$hPrinter, [IntPtr]::Zero)
+    if (-not \$result) {
+        \$err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        Write-Output "FAIL:OpenPrinter error \$err"
+        exit 1
+    }
+    
+    try {
+        # Iniciar documento
+        \$di = New-Object RawPrinterHelper+DOCINFOW
+        \$di.pDocName = "Cash Drawer"
+        \$di.pDataType = "RAW"
+        
+        \$result = [RawPrinterHelper]::StartDocPrinter(\$hPrinter, 1, \$di)
+        if (-not \$result) {
+            \$err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+            Write-Output "FAIL:StartDocPrinter error \$err"
+            exit 1
+        }
+        
+        try {
+            # Iniciar página
+            \$result = [RawPrinterHelper]::StartPagePrinter(\$hPrinter)
+            if (-not \$result) {
+                \$err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+                Write-Output "FAIL:StartPagePrinter error \$err"
+                exit 1
+            }
+            
+            try {
+                # Escrever dados
+                \$written = 0
+                \$result = [RawPrinterHelper]::WritePrinter(\$hPrinter, \$data, \$data.Length, [ref]\$written)
+                if (-not \$result) {
+                    \$err = [System.Runtime.InteropServices.Marshal]::GetLastWin32Error()
+                    Write-Output "FAIL:WritePrinter error \$err"
+                    exit 1
+                }
+                
+                if (\$written -ne \$data.Length) {
+                    Write-Output "FAIL:WritePrinter wrote \$written of \$(\$data.Length) bytes"
+                    exit 1
+                }
+                
+                Write-Output "SUCCESS:\$written bytes"
+            }
+            finally {
+                [RawPrinterHelper]::EndPagePrinter(\$hPrinter) | Out-Null
+            }
+        }
+        finally {
+            [RawPrinterHelper]::EndDocPrinter(\$hPrinter) | Out-Null
+        }
+    }
+    finally {
+        [RawPrinterHelper]::ClosePrinter(\$hPrinter) | Out-Null
+    }
+}
+catch {
+    Write-Output "FAIL:\$(\$_.Exception.Message)"
+    exit 1
+}
+''';
+
+      AppLogger.d('🗄️ Executando PowerShell winspool.drv...');
       
-      AppLogger.d('🗄️ copy stdout: ${result.stdout}');
-      AppLogger.d('🗄️ copy stderr: ${result.stderr}');
-      AppLogger.d('🗄️ copy exitCode: ${result.exitCode}');
-      
-      if (result.exitCode == 0) {
-        await _cleanupTempFile(tempFile);
-        return PrintResult.ok('Comando enviado via copy');
-      }
-      
-      // Método 2: Se copy falhou, tentar "print /d:"
-      AppLogger.d('🗄️ copy falhou, tentando print /d:...');
-      result = await Process.run(
-        'cmd',
-        ['/c', 'print', '/d:$printerName', tempFile.path],
-        runInShell: true,
-      );
-      
-      AppLogger.d('🗄️ print stdout: ${result.stdout}');
-      AppLogger.d('🗄️ print stderr: ${result.stderr}');
-      AppLogger.d('🗄️ print exitCode: ${result.exitCode}');
-      
-      await _cleanupTempFile(tempFile);
-      
-      if (result.exitCode == 0) {
-        return PrintResult.ok('Comando enviado via print');
-      }
-      
-      // Método 3: Tentar via PowerShell Out-Printer
-      AppLogger.d('🗄️ print falhou, tentando PowerShell Out-Printer...');
-      
-      // Recriar ficheiro pois pode ter sido apagado
-      await tempFile.writeAsBytes(bytes, flush: true);
-      
-      result = await Process.run(
+      final result = await Process.run(
         'powershell',
-        [
-          '-NoProfile',
-          '-Command',
-          'Get-Content -Path "${tempFile.path}" -Encoding Byte -Raw | Out-Printer -Name "$printerName"'
-        ],
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
         runInShell: true,
       );
       
-      AppLogger.d('🗄️ Out-Printer stdout: ${result.stdout}');
-      AppLogger.d('🗄️ Out-Printer stderr: ${result.stderr}');
-      AppLogger.d('🗄️ Out-Printer exitCode: ${result.exitCode}');
+      final stdout = result.stdout.toString().trim();
+      final stderr = result.stderr.toString().trim();
       
-      await _cleanupTempFile(tempFile);
-      
-      if (result.exitCode == 0 && result.stderr.toString().isEmpty) {
-        return PrintResult.ok('Comando enviado via Out-Printer');
+      AppLogger.d('🗄️ PowerShell stdout: $stdout');
+      if (stderr.isNotEmpty) {
+        AppLogger.d('🗄️ PowerShell stderr: $stderr');
       }
+      AppLogger.d('🗄️ PowerShell exitCode: ${result.exitCode}');
       
-      return PrintResult.fail('Todos os métodos falharam. Último erro: ${result.stderr}');
+      if (stdout.startsWith('SUCCESS')) {
+        return PrintResult.ok('Comando enviado via winspool');
+      } else if (stdout.startsWith('FAIL:')) {
+        return PrintResult.fail(stdout.substring(5));
+      } else {
+        return PrintResult.fail('Resposta inesperada: $stdout $stderr');
+      }
     } catch (e) {
       AppLogger.e('❌ Erro ao enviar bytes: $e');
       return PrintResult.fail('Erro: $e');
-    }
-  }
-  
-  /// Limpa ficheiro temporário
-  Future<void> _cleanupTempFile(File file) async {
-    try {
-      if (await file.exists()) {
-        await file.delete();
-      }
-    } catch (_) {
-      // Ignorar erros de limpeza
     }
   }
 
