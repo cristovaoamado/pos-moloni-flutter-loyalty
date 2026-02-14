@@ -10,6 +10,7 @@ import 'package:pos_moloni_app/features/products/presentation/providers/product_
 
 /// Painel de pesquisa e seleção de produtos
 /// Mostra favoritos locais inicialmente, pesquisa na API quando há query
+/// PAGINAÇÃO POR BOTÕES (touch-friendly)
 class ProductSearchPanel extends ConsumerStatefulWidget {
   const ProductSearchPanel({
     super.key,
@@ -26,22 +27,27 @@ class ProductSearchPanel extends ConsumerStatefulWidget {
 
 class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   final TextEditingController _searchController = TextEditingController();
-  final ScrollController _scrollController = ScrollController();
   final FocusNode _searchFocusNode = FocusNode();
   
   bool _showSearchResults = false;
 
+  // Paginação
+  static const int _columns = 6;
+  static const int _rows = 3;
+  static const int _itemsPerPage = _columns * _rows; // 18 produtos por página
+  
+  int _currentFavoritesPage = 0;
+  int _currentSearchPage = 0;
+
   @override
   void initState() {
     super.initState();
-    _scrollController.addListener(_onScroll);
     _searchFocusNode.addListener(_onSearchFocusChanged);
   }
 
   @override
   void dispose() {
     _searchController.dispose();
-    _scrollController.dispose();
     _searchFocusNode.removeListener(_onSearchFocusChanged);
     _searchFocusNode.dispose();
     super.dispose();
@@ -53,19 +59,10 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     }
   }
 
-  void _onScroll() {
-    if (_scrollController.position.pixels >=
-        _scrollController.position.maxScrollExtent - 200) {
-      // Carregar mais produtos se estiver a pesquisar
-      if (_showSearchResults) {
-        ref.read(productProvider.notifier).loadMoreProducts();
-      }
-    }
-  }
-
   void _onSearchChanged(String query) {
     setState(() {
       _showSearchResults = query.length >= 3;
+      _currentSearchPage = 0; // Reset página ao pesquisar
     });
 
     if (_showSearchResults) {
@@ -77,6 +74,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     _searchController.clear();
     setState(() {
       _showSearchResults = false;
+      _currentSearchPage = 0;
     });
     ref.read(productProvider.notifier).clearSearchResults();
   }
@@ -190,7 +188,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // FAVORITOS
+  // FAVORITOS COM PAGINAÇÃO
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildFavoritesContent(LocalFavoritesState state) {
@@ -202,32 +200,68 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       return _buildEmptyFavoritesState();
     }
 
+    // Calcular paginação
+    final totalItems = state.favorites.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    // Garantir que a página actual é válida
+    if (_currentFavoritesPage >= totalPages) {
+      _currentFavoritesPage = totalPages - 1;
+    }
+    if (_currentFavoritesPage < 0) {
+      _currentFavoritesPage = 0;
+    }
+
+    // Obter itens da página actual
+    final startIndex = _currentFavoritesPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = state.favorites.sublist(startIndex, endIndex);
+
     return Column(
       children: [
         // Header
-        _buildFavoritesHeader(state),
-        // Grid
+        _buildFavoritesHeader(state, totalPages),
+        
+        // Grid (sem scroll - NeverScrollableScrollPhysics)
         Expanded(
           child: GridView.builder(
-            controller: _scrollController,
             padding: const EdgeInsets.all(12),
+            physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 6,
+              crossAxisCount: _columns,
               childAspectRatio: 0.85,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
             ),
-            itemCount: state.favorites.length,
+            itemCount: pageItems.length,
             itemBuilder: (context, index) {
-              return _buildFavoriteCard(state.favorites[index]);
+              return _buildFavoriteCard(pageItems[index]);
             },
           ),
         ),
+        
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentFavoritesPage,
+            totalPages: totalPages,
+            totalItems: totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentFavoritesPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentFavoritesPage++;
+              });
+            },
+          ),
       ],
     );
   }
 
-  Widget _buildFavoritesHeader(LocalFavoritesState state) {
+  Widget _buildFavoritesHeader(LocalFavoritesState state, int totalPages) {
     // Contar favoritos sem taxes (dados antigos que precisam de sync)
     final favoritesWithoutTaxes = state.favorites.where((f) => !f.hasTaxes).length;
     final needsSync = favoritesWithoutTaxes > 0;
@@ -359,45 +393,19 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                     overflow: TextOverflow.ellipsis,
                   ),
                   const SizedBox(height: 4),
-                  // Preço e IVA
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          favorite.formattedPriceWithTax,
-                          style: const TextStyle(
-                            color: AppColors.primary,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                      ),
-                      // Badge de IVA
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                        decoration: BoxDecoration(
-                          color: needsSync 
-                              ? Colors.orange.shade100 
-                              : Colors.grey.shade200,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Text(
-                          '${favorite.taxRate.toStringAsFixed(0)}%',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            color: needsSync 
-                                ? Colors.orange.shade800 
-                                : Colors.grey.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
+                  // Preço
+                  Text(
+                    favorite.formattedPriceWithTax,
+                    style: const TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
                   ),
                 ],
               ),
             ),
-            // Badge de favorito
+            // Estrela de favorito
             Positioned(
               top: 4,
               right: 4,
@@ -420,7 +428,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                 top: 4,
                 left: 4,
                 child: Tooltip(
-                  message: 'Sincronização necessária',
+                  message: 'Precisa de sincronização',
                   child: Container(
                     padding: const EdgeInsets.all(2),
                     decoration: BoxDecoration(
@@ -428,7 +436,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      Icons.sync_problem,
+                      Icons.warning_amber_rounded,
                       color: Colors.orange.shade700,
                       size: 12,
                     ),
@@ -456,16 +464,15 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             'Sem favoritos',
             style: TextStyle(
               fontSize: 18,
-              fontWeight: FontWeight.w600,
+              fontWeight: FontWeight.w500,
               color: Colors.grey.shade600,
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Pesquise produtos e mantenha pressionado\npara adicionar aos favoritos',
-            textAlign: TextAlign.center,
+            'Pesquise produtos e adicione aos favoritos',
             style: TextStyle(
-              fontSize: 13,
+              fontSize: 14,
               color: Colors.grey.shade500,
             ),
           ),
@@ -475,7 +482,7 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
-  // RESULTADOS DA PESQUISA
+  // RESULTADOS DA PESQUISA COM PAGINAÇÃO
   // ═══════════════════════════════════════════════════════════════════════════
 
   Widget _buildSearchResults(ProductState productState, LocalFavoritesState favoritesState) {
@@ -483,46 +490,119 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
       return const Center(child: CircularProgressIndicator());
     }
 
+    if (productState.error != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.error_outline, size: 48, color: Colors.red.shade300),
+            const SizedBox(height: 16),
+            Text(
+              'Erro: ${productState.error}',
+              style: TextStyle(color: Colors.red.shade600),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () {
+                ref.read(productProvider.notifier).searchProducts(_searchController.text);
+              },
+              child: const Text('Tentar novamente'),
+            ),
+          ],
+        ),
+      );
+    }
+
     if (productState.products.isEmpty) {
       return _buildEmptySearchState();
     }
 
-    // Produto scaneado em destaque
-    if (productState.hasScannedProduct) {
-      return _buildScannedProductView(productState.scannedProduct!, favoritesState);
+    // Calcular paginação
+    final totalItems = productState.products.length;
+    final totalPages = (totalItems / _itemsPerPage).ceil();
+    
+    // Garantir que a página actual é válida
+    if (_currentSearchPage >= totalPages) {
+      _currentSearchPage = totalPages - 1;
     }
+    if (_currentSearchPage < 0) {
+      _currentSearchPage = 0;
+    }
+
+    // Obter itens da página actual
+    final startIndex = _currentSearchPage * _itemsPerPage;
+    final endIndex = (startIndex + _itemsPerPage).clamp(0, totalItems);
+    final pageItems = productState.products.sublist(startIndex, endIndex);
 
     return Column(
       children: [
         // Header dos resultados
-        _buildSearchResultsHeader(productState),
-        // Grid
+        _buildSearchResultsHeader(productState, totalPages),
+        
+        // Grid (sem scroll)
         Expanded(
           child: GridView.builder(
-            controller: _scrollController,
             padding: const EdgeInsets.all(12),
+            physics: const NeverScrollableScrollPhysics(),
             gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 6,
+              crossAxisCount: _columns,
               childAspectRatio: 0.85,
               crossAxisSpacing: 10,
               mainAxisSpacing: 10,
             ),
-            itemCount: productState.products.length + (productState.isLoadingMore ? 1 : 0),
+            itemCount: pageItems.length,
             itemBuilder: (context, index) {
-              if (index >= productState.products.length) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              final product = productState.products[index];
+              final product = pageItems[index];
               final isFavorite = favoritesState.isFavorite(product.id);
               return _buildProductCard(product, isFavorite);
             },
           ),
         ),
+        
+        // Barra de paginação
+        if (totalPages > 1)
+          _buildPaginationBar(
+            currentPage: _currentSearchPage,
+            totalPages: totalPages,
+            totalItems: productState.hasMore ? productState.totalCount : totalItems,
+            onPrevious: () {
+              setState(() {
+                _currentSearchPage--;
+              });
+            },
+            onNext: () {
+              setState(() {
+                _currentSearchPage++;
+              });
+              // Carregar mais quando chegar à última página
+              if (_currentSearchPage >= totalPages - 1 && productState.hasMore) {
+                ref.read(productProvider.notifier).loadMoreProducts();
+              }
+            },
+          ),
+        
+        // Indicador de loading ao carregar mais
+        if (productState.isLoadingMore)
+          Container(
+            padding: const EdgeInsets.all(8),
+            child: const Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+                SizedBox(width: 8),
+                Text('A carregar mais...'),
+              ],
+            ),
+          ),
       ],
     );
   }
 
-  Widget _buildSearchResultsHeader(ProductState state) {
+  Widget _buildSearchResultsHeader(ProductState state, int totalPages) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
       decoration: BoxDecoration(
@@ -665,48 +745,6 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
     }
   }
 
-  Widget _buildScannedProductView(Product product, LocalFavoritesState favoritesState) {
-    final isFavorite = favoritesState.isFavorite(product.id);
-    
-    return Column(
-      children: [
-        // Header
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-          color: Colors.green.shade50,
-          child: Row(
-            children: [
-              const Icon(Icons.qr_code_scanner, color: Colors.green),
-              const SizedBox(width: 8),
-              const Text(
-                'Produto encontrado',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: Colors.green,
-                ),
-              ),
-              const Spacer(),
-              TextButton.icon(
-                onPressed: _clearSearch,
-                icon: const Icon(Icons.arrow_back, size: 16),
-                label: const Text('Favoritos'),
-              ),
-            ],
-          ),
-        ),
-        // Produto em destaque
-        Expanded(
-          child: Center(
-            child: SizedBox(
-              width: 200,
-              child: _buildProductCard(product, isFavorite),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildEmptySearchState() {
     return Center(
       child: Column(
@@ -732,6 +770,121 @@ class _ProductSearchPanelState extends ConsumerState<ProductSearchPanel> {
             label: const Text('Voltar aos favoritos'),
           ),
         ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // BARRA DE PAGINAÇÃO (touch-friendly)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  Widget _buildPaginationBar({
+    required int currentPage,
+    required int totalPages,
+    required int totalItems,
+    required VoidCallback onPrevious,
+    required VoidCallback onNext,
+  }) {
+    final hasPrevious = currentPage > 0;
+    final hasNext = currentPage < totalPages - 1;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade100,
+        border: Border(
+          top: BorderSide(color: Colors.grey.shade300),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // Botão anterior (grande, touch-friendly)
+          _buildPaginationButton(
+            icon: Icons.chevron_left,
+            label: 'Anterior',
+            onPressed: hasPrevious ? onPrevious : null,
+          ),
+          
+          const SizedBox(width: 16),
+          
+          // Info da página
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              '${currentPage + 1} / $totalPages',
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                color: AppColors.primary,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          
+          const SizedBox(width: 16),
+          
+          // Botão próximo (grande, touch-friendly)
+          _buildPaginationButton(
+            icon: Icons.chevron_right,
+            label: 'Próximo',
+            onPressed: hasNext ? onNext : null,
+            iconRight: true,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPaginationButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+    bool iconRight = false,
+  }) {
+    final isEnabled = onPressed != null;
+    
+    return Material(
+      color: isEnabled ? AppColors.primary : Colors.grey.shade300,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: onPressed,
+        borderRadius: BorderRadius.circular(8),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (!iconRight) ...[
+                Icon(
+                  icon,
+                  color: isEnabled ? Colors.white : Colors.grey.shade500,
+                  size: 24,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: isEnabled ? Colors.white : Colors.grey.shade500,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                ),
+              ),
+              if (iconRight) ...[
+                const SizedBox(width: 4),
+                Icon(
+                  icon,
+                  color: isEnabled ? Colors.white : Colors.grey.shade500,
+                  size: 24,
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

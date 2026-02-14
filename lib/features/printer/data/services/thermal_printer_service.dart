@@ -5,7 +5,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:printing/printing.dart';
 import 'package:pdf/pdf.dart';
-import 'package:characters/characters.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 import 'package:pos_moloni_app/core/utils/logger.dart';
@@ -331,7 +330,7 @@ class ThermalPrinterService {
   }
 
   /// Abre gaveta via impressora USB no Windows
-  /// NOVA IMPLEMENTAÇÃO: Usa RawPrinterHelper directamente via PowerShell
+  /// IMPLEMENTAÇÃO SIMPLES: Usa ficheiro temporário + copy /b
   Future<PrintResult> _openDrawerUsb() async {
     if (!Platform.isWindows) {
       return PrintResult.fail('Abertura de gaveta USB só suportada no Windows');
@@ -351,7 +350,7 @@ class ThermalPrinterService {
       return result;
     }
 
-    AppLogger.w('Pino 2 falhou, tentando pino 5...');
+    AppLogger.w('Pino 2 falhou: ${result.error}, tentando pino 5...');
     
     result = await _sendRawBytesToPrinter(printerName, [
       ..._cmdInit,
@@ -363,160 +362,100 @@ class ThermalPrinterService {
       return result;
     }
 
-    AppLogger.e('❌ Ambos os pinos falharam');
+    AppLogger.e('❌ Ambos os pinos falharam: ${result.error}');
     return PrintResult.fail('Não foi possível abrir a gaveta: ${result.error}');
   }
 
   /// Envia bytes RAW directamente para a impressora Windows
-  /// Este é o método mais fiável para comandos ESC/POS
+  /// Método simples: cria ficheiro binário e usa "print /d:" para enviar
   Future<PrintResult> _sendRawBytesToPrinter(String printerName, List<int> bytes) async {
     try {
-      // Escapar o nome da impressora para PowerShell
-      final escapedName = printerName.replaceAll("'", "''");
+      AppLogger.d('🗄️ Impressora: $printerName');
+      AppLogger.d('🗄️ Bytes a enviar: ${bytes.length}');
       
-      // Converter bytes para formato PowerShell
-      final hexBytes = bytes.map((b) => '0x${b.toRadixString(16).padLeft(2, '0')}').join(',');
+      // Criar ficheiro temporário com os bytes
+      final tempDir = Directory.systemTemp;
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final tempFile = File('${tempDir.path}\\drawer_$timestamp.bin');
       
-      // Script PowerShell que usa a API do Windows directamente
-      final script = '''
-\$ErrorActionPreference = "Stop"
-
-Add-Type -TypeDefinition @"
-using System;
-using System.Runtime.InteropServices;
-
-public class RawPrinterHelper
-{
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
-    public struct DOCINFOW
-    {
-        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
-        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
-        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
-    }
-
-    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool ClosePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
-    public static extern bool StartDocPrinter(IntPtr hPrinter, int Level, ref DOCINFOW pDocInfo);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool EndDocPrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool StartPagePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool EndPagePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
-
-    public static string SendBytesToPrinter(string printerName, byte[] data)
-    {
-        IntPtr hPrinter = IntPtr.Zero;
-        
-        if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
-        {
-            int err = Marshal.GetLastWin32Error();
-            return "FAIL:OpenPrinter failed with error " + err;
-        }
-
-        try
-        {
-            var di = new DOCINFOW();
-            di.pDocName = "Cash Drawer Command";
-            di.pDataType = "RAW";
-            di.pOutputFile = null;
-
-            if (!StartDocPrinter(hPrinter, 1, ref di))
-            {
-                int err = Marshal.GetLastWin32Error();
-                return "FAIL:StartDocPrinter failed with error " + err;
-            }
-
-            try
-            {
-                if (!StartPagePrinter(hPrinter))
-                {
-                    int err = Marshal.GetLastWin32Error();
-                    return "FAIL:StartPagePrinter failed with error " + err;
-                }
-
-                try
-                {
-                    int written = 0;
-                    if (!WritePrinter(hPrinter, data, data.Length, out written))
-                    {
-                        int err = Marshal.GetLastWin32Error();
-                        return "FAIL:WritePrinter failed with error " + err;
-                    }
-                    
-                    if (written != data.Length)
-                    {
-                        return "FAIL:WritePrinter wrote " + written + " of " + data.Length + " bytes";
-                    }
-                    
-                    return "SUCCESS";
-                }
-                finally
-                {
-                    EndPagePrinter(hPrinter);
-                }
-            }
-            finally
-            {
-                EndDocPrinter(hPrinter);
-            }
-        }
-        finally
-        {
-            ClosePrinter(hPrinter);
-        }
-    }
-}
-"@
-
-\$bytes = [byte[]]@($hexBytes)
-\$result = [RawPrinterHelper]::SendBytesToPrinter('$escapedName', \$bytes)
-Write-Output \$result
-''';
-
-      AppLogger.d('🗄️ Executando PowerShell para enviar ${bytes.length} bytes...');
+      await tempFile.writeAsBytes(bytes, flush: true);
+      AppLogger.d('🗄️ Ficheiro temporário criado: ${tempFile.path}');
       
-      final result = await Process.run(
-        'powershell',
-        ['-ExecutionPolicy', 'Bypass', '-NoProfile', '-NonInteractive', '-Command', script],
+      // Método 1: Usar "copy /b" para copiar para a share da impressora
+      var result = await Process.run(
+        'cmd',
+        ['/c', 'copy', '/b', tempFile.path, '\\\\localhost\\$printerName'],
         runInShell: true,
       );
-
-      final output = result.stdout.toString().trim();
-      final stderr = result.stderr.toString().trim();
       
-      AppLogger.d('🗄️ PowerShell stdout: $output');
-      if (stderr.isNotEmpty) {
-        AppLogger.d('🗄️ PowerShell stderr: $stderr');
+      AppLogger.d('🗄️ copy stdout: ${result.stdout}');
+      AppLogger.d('🗄️ copy stderr: ${result.stderr}');
+      AppLogger.d('🗄️ copy exitCode: ${result.exitCode}');
+      
+      if (result.exitCode == 0) {
+        await _cleanupTempFile(tempFile);
+        return PrintResult.ok('Comando enviado via copy');
       }
-
-      if (output.startsWith('SUCCESS')) {
-        return PrintResult.ok('Comando enviado');
-      } else if (output.startsWith('FAIL:')) {
-        final errorMsg = output.substring(5);
-        return PrintResult.fail(errorMsg);
-      } else {
-        // Pode haver warnings do PowerShell antes do resultado
-        if (output.contains('SUCCESS')) {
-          return PrintResult.ok('Comando enviado');
-        }
-        return PrintResult.fail('Resposta inesperada: $output');
+      
+      // Método 2: Se copy falhou, tentar "print /d:"
+      AppLogger.d('🗄️ copy falhou, tentando print /d:...');
+      result = await Process.run(
+        'cmd',
+        ['/c', 'print', '/d:$printerName', tempFile.path],
+        runInShell: true,
+      );
+      
+      AppLogger.d('🗄️ print stdout: ${result.stdout}');
+      AppLogger.d('🗄️ print stderr: ${result.stderr}');
+      AppLogger.d('🗄️ print exitCode: ${result.exitCode}');
+      
+      await _cleanupTempFile(tempFile);
+      
+      if (result.exitCode == 0) {
+        return PrintResult.ok('Comando enviado via print');
       }
+      
+      // Método 3: Tentar via PowerShell Out-Printer
+      AppLogger.d('🗄️ print falhou, tentando PowerShell Out-Printer...');
+      
+      // Recriar ficheiro pois pode ter sido apagado
+      await tempFile.writeAsBytes(bytes, flush: true);
+      
+      result = await Process.run(
+        'powershell',
+        [
+          '-NoProfile',
+          '-Command',
+          'Get-Content -Path "${tempFile.path}" -Encoding Byte -Raw | Out-Printer -Name "$printerName"'
+        ],
+        runInShell: true,
+      );
+      
+      AppLogger.d('🗄️ Out-Printer stdout: ${result.stdout}');
+      AppLogger.d('🗄️ Out-Printer stderr: ${result.stderr}');
+      AppLogger.d('🗄️ Out-Printer exitCode: ${result.exitCode}');
+      
+      await _cleanupTempFile(tempFile);
+      
+      if (result.exitCode == 0 && result.stderr.toString().isEmpty) {
+        return PrintResult.ok('Comando enviado via Out-Printer');
+      }
+      
+      return PrintResult.fail('Todos os métodos falharam. Último erro: ${result.stderr}');
     } catch (e) {
       AppLogger.e('❌ Erro ao enviar bytes: $e');
       return PrintResult.fail('Erro: $e');
+    }
+  }
+  
+  /// Limpa ficheiro temporário
+  Future<void> _cleanupTempFile(File file) async {
+    try {
+      if (await file.exists()) {
+        await file.delete();
+      }
+    } catch (_) {
+      // Ignorar erros de limpeza
     }
   }
 
@@ -564,7 +503,8 @@ Write-Output \$result
     };
 
     final bytes = <int>[];
-    for (final char in text.characters) {
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
       if (map.containsKey(char)) {
         bytes.add(map[char]!);
       } else {
