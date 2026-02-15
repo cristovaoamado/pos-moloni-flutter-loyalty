@@ -367,129 +367,139 @@ class ThermalPrinterService {
   }
 
   /// Envia bytes RAW directamente para a impressora Windows
-  /// Usa ficheiro temporário + PowerShell com .NET System.IO.File
+  /// Cria um script PowerShell temporário para evitar problemas de escape
   Future<PrintResult> _sendRawBytesToPrinter(String printerName, List<int> bytes) async {
     try {
       AppLogger.d('🗄️ Impressora: $printerName');
       AppLogger.d('🗄️ Bytes a enviar: ${bytes.length}');
       
-      // Criar ficheiro temporário com os bytes
       final tempDir = Directory.systemTemp;
       final timestamp = DateTime.now().millisecondsSinceEpoch;
-      final tempFile = File('${tempDir.path}\\drawer_$timestamp.bin');
       
-      await tempFile.writeAsBytes(bytes, flush: true);
-      AppLogger.d('🗄️ Ficheiro criado: ${tempFile.path}');
+      // Criar ficheiro com os bytes
+      final dataFile = File('${tempDir.path}\\drawer_data_$timestamp.bin');
+      await dataFile.writeAsBytes(bytes, flush: true);
+      AppLogger.d('🗄️ Dados: ${dataFile.path}');
       
-      // Escapar caminhos para PowerShell
-      final filePath = tempFile.path.replaceAll('\\', '\\\\');
-      final escapedPrinter = printerName.replaceAll("'", "''");
-      
-      // Script PowerShell simples usando .NET Framework
-      final script = '''
-try {
-    \$printerPath = "\\\\\\\\localhost\\\\$escapedPrinter"
-    \$bytes = [System.IO.File]::ReadAllBytes("$filePath")
-    
-    # Tentar abrir a impressora como ficheiro
-    \$fs = [System.IO.File]::Open(\$printerPath, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-    \$fs.Write(\$bytes, 0, \$bytes.Length)
-    \$fs.Close()
-    Write-Output "SUCCESS:\$(\$bytes.Length) bytes via FileStream"
-} catch {
-    # Se FileStream falhar, tentar método alternativo com P/Invoke
-    try {
-        Add-Type -TypeDefinition @"
+      // Criar script PowerShell
+      final scriptFile = File('${tempDir.path}\\drawer_script_$timestamp.ps1');
+      final scriptContent = '''
+\$ErrorActionPreference = "SilentlyContinue"
+\$printerName = "$printerName"
+\$dataPath = "${dataFile.path.replaceAll('\\', '\\\\')}"
+
+Add-Type -TypeDefinition @'
 using System;
-using System.IO;
 using System.Runtime.InteropServices;
 
-public class PrintDirect {
-    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern IntPtr CreateFile(
-        string lpFileName,
-        uint dwDesiredAccess,
-        uint dwShareMode,
-        IntPtr lpSecurityAttributes,
-        uint dwCreationDisposition,
-        uint dwFlagsAndAttributes,
-        IntPtr hTemplateFile);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool WriteFile(
-        IntPtr hFile,
-        byte[] lpBuffer,
-        uint nNumberOfBytesToWrite,
-        out uint lpNumberOfBytesWritten,
-        IntPtr lpOverlapped);
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    public static extern bool CloseHandle(IntPtr hObject);
-
-    public static string SendToPrinter(string printerName, byte[] data) {
-        string path = @"\\\\.\\" + printerName;
-        IntPtr hPrinter = CreateFile(path, 0x40000000, 0, IntPtr.Zero, 3, 0, IntPtr.Zero);
-        
-        if (hPrinter == IntPtr.Zero || hPrinter == (IntPtr)(-1)) {
-            return "FAIL:CreateFile error " + Marshal.GetLastWin32Error();
-        }
-        
-        uint written = 0;
-        bool result = WriteFile(hPrinter, data, (uint)data.Length, out written, IntPtr.Zero);
-        CloseHandle(hPrinter);
-        
-        if (!result) {
-            return "FAIL:WriteFile error " + Marshal.GetLastWin32Error();
-        }
-        
-        return "SUCCESS:" + written + " bytes via CreateFile";
+public class RawPrint {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    public class DOCINFO {
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDocName;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pOutputFile;
+        [MarshalAs(UnmanagedType.LPWStr)] public string pDataType;
     }
+
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool ClosePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", CharSet = CharSet.Unicode, SetLastError = true)]
+    public static extern bool StartDocPrinter(IntPtr hPrinter, int Level, [In] DOCINFO pDocInfo);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool EndDocPrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool StartPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool EndPagePrinter(IntPtr hPrinter);
+
+    [DllImport("winspool.drv", SetLastError = true)]
+    public static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
 }
-"@
-        \$result = [PrintDirect]::SendToPrinter("$escapedPrinter", \$bytes)
-        Write-Output \$result
-    } catch {
-        Write-Output "FAIL:\$(\$_.Exception.Message)"
-    }
+'@
+
+\$data = [System.IO.File]::ReadAllBytes(\$dataPath)
+
+\$hPrinter = [IntPtr]::Zero
+if (-not [RawPrint]::OpenPrinter(\$printerName, [ref]\$hPrinter, [IntPtr]::Zero)) {
+    Write-Output "FAIL:OpenPrinter"
+    exit 1
 }
-Remove-Item "$filePath" -Force -ErrorAction SilentlyContinue
+
+\$di = New-Object RawPrint+DOCINFO
+\$di.pDocName = "ESC/POS"
+\$di.pDataType = "RAW"
+
+if (-not [RawPrint]::StartDocPrinter(\$hPrinter, 1, \$di)) {
+    [RawPrint]::ClosePrinter(\$hPrinter)
+    Write-Output "FAIL:StartDocPrinter"
+    exit 1
+}
+
+if (-not [RawPrint]::StartPagePrinter(\$hPrinter)) {
+    [RawPrint]::EndDocPrinter(\$hPrinter)
+    [RawPrint]::ClosePrinter(\$hPrinter)
+    Write-Output "FAIL:StartPagePrinter"
+    exit 1
+}
+
+\$written = 0
+if (-not [RawPrint]::WritePrinter(\$hPrinter, \$data, \$data.Length, [ref]\$written)) {
+    [RawPrint]::EndPagePrinter(\$hPrinter)
+    [RawPrint]::EndDocPrinter(\$hPrinter)
+    [RawPrint]::ClosePrinter(\$hPrinter)
+    Write-Output "FAIL:WritePrinter"
+    exit 1
+}
+
+[RawPrint]::EndPagePrinter(\$hPrinter)
+[RawPrint]::EndDocPrinter(\$hPrinter)
+[RawPrint]::ClosePrinter(\$hPrinter)
+
+Write-Output "SUCCESS:\$written"
 ''';
-
-      AppLogger.d('🗄️ Executando PowerShell...');
+      
+      await scriptFile.writeAsString(scriptContent, flush: true);
+      AppLogger.d('🗄️ Script: ${scriptFile.path}');
+      
+      // Executar script
+      AppLogger.d('🗄️ Executando script PowerShell...');
       
       final result = await Process.run(
         'powershell',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', script],
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', scriptFile.path],
         runInShell: true,
       );
       
       final stdout = result.stdout.toString().trim();
       final stderr = result.stderr.toString().trim();
       
-      AppLogger.d('🗄️ PowerShell stdout: $stdout');
+      AppLogger.d('🗄️ stdout: $stdout');
       if (stderr.isNotEmpty) {
-        AppLogger.d('🗄️ PowerShell stderr: $stderr');
+        AppLogger.d('🗄️ stderr: $stderr');
       }
-      AppLogger.d('🗄️ PowerShell exitCode: ${result.exitCode}');
+      AppLogger.d('🗄️ exitCode: ${result.exitCode}');
       
-      // Limpar ficheiro temporário
+      // Limpar ficheiros temporários
       try {
-        if (await tempFile.exists()) {
-          await tempFile.delete();
-        }
+        await dataFile.delete();
+        await scriptFile.delete();
       } catch (_) {}
       
       if (stdout.startsWith('SUCCESS')) {
-        return PrintResult.ok(stdout.substring(8));
+        return PrintResult.ok('${stdout.substring(8)} bytes enviados');
       } else if (stdout.startsWith('FAIL:')) {
         return PrintResult.fail(stdout.substring(5));
-      } else if (stdout.isEmpty && stderr.isEmpty) {
-        return PrintResult.fail('PowerShell não produziu output');
       } else {
         return PrintResult.fail('Erro: $stdout $stderr');
       }
     } catch (e) {
-      AppLogger.e('❌ Erro ao enviar bytes: $e');
+      AppLogger.e('❌ Erro: $e');
       return PrintResult.fail('Erro: $e');
     }
   }
