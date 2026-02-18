@@ -170,7 +170,9 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
     try {
       final loyaltyState = ref.read(loyaltyProvider);
 
-      if (loyaltyState.isEnabled && loyaltyState.currentCustomer != null) {
+      // Registar venda no loyalty se estiver activo (com ou sem cartão)
+      // Isto permite guardar todas as transações no sistema de fidelização
+      if (loyaltyState.isEnabled && loyaltyState.isConnected) {
         // Chamar API de fidelização
         final result = await ref.read(loyaltyProvider.notifier).registerSale(
               amount: widget.total,
@@ -208,7 +210,7 @@ class _CheckoutDialogState extends ConsumerState<CheckoutDialog> {
           });
         }
       } else {
-        // Sem fidelização activa
+        // Sem fidelização activa ou não conectado
         setState(() {
           _isConfirmed = true;
           _isProcessing = false;

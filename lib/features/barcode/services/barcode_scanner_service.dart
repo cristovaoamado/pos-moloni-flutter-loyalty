@@ -27,6 +27,12 @@ class BarcodeScannerService {
   /// Se o serviço está activo
   bool _isListening = false;
   
+  /// Último código de barras processado
+  String? _lastBarcode;
+  
+  /// Timestamp do último código processado
+  DateTime? _lastBarcodeTime;
+  
   /// Tempo máximo entre teclas para considerar como scanner (ms)
   /// Scanners são muito rápidos, tipicamente < 50ms entre caracteres
   static const int _maxKeyInterval = 100;
@@ -36,6 +42,10 @@ class BarcodeScannerService {
   
   /// Tempo de debounce após última tecla (ms)
   static const int _debounceTime = 150;
+  
+  /// Tempo mínimo entre leituras do MESMO código de barras (ms)
+  /// Evita leituras duplicadas quando o scanner é muito rápido
+  static const int _duplicateCooldown = 500;
 
   /// Inicia a escuta de eventos de barcode
   void startListening(OnBarcodeScanned onBarcodeScanned) {
@@ -109,6 +119,20 @@ class BarcodeScannerService {
     _clearBuffer();
     
     if (barcode.length >= _minBarcodeLength) {
+      // Verificar se é leitura duplicada (mesmo código em pouco tempo)
+      final now = DateTime.now();
+      if (_lastBarcode == barcode && _lastBarcodeTime != null) {
+        final elapsed = now.difference(_lastBarcodeTime!).inMilliseconds;
+        if (elapsed < _duplicateCooldown) {
+          AppLogger.d('📦 Barcode ignorado (duplicado em ${elapsed}ms): $barcode');
+          return;
+        }
+      }
+      
+      // Guardar para detecção de duplicados
+      _lastBarcode = barcode;
+      _lastBarcodeTime = now;
+      
       AppLogger.i('📦 Barcode detectado: $barcode');
       _onBarcodeScanned?.call(barcode);
     }
