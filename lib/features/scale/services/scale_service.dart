@@ -494,7 +494,35 @@ class ScaleService {
 
   // ========== LEITURA ==========
 
+  /// Número máximo de tentativas de leitura
+  static const int _maxReadRetries = 3;
+  
+  /// Delay entre tentativas (ms)
+  static const int _retryDelayMs = 150;
+
+  /// Lê o peso da balança com retries automáticos
   Future<WeightReading?> readWeight() async {
+    for (int attempt = 1; attempt <= _maxReadRetries; attempt++) {
+      AppLogger.d('⚖️ Tentativa de leitura $attempt/$_maxReadRetries');
+      
+      final result = await _readWeightOnce();
+      
+      if (result != null) {
+        return result;
+      }
+      
+      // Se não é a última tentativa, esperar antes de tentar novamente
+      if (attempt < _maxReadRetries) {
+        await Future.delayed(Duration(milliseconds: _retryDelayMs));
+      }
+    }
+    
+    AppLogger.w('⚖️ Todas as $_maxReadRetries tentativas de leitura falharam');
+    return null;
+  }
+
+  /// Executa uma única tentativa de leitura
+  Future<WeightReading?> _readWeightOnce() async {
     if (!_configLoaded) await loadConfig();
     if (!_config.isConfigured) {
       AppLogger.w('⚖️ readWeight: Balança não configurada');
@@ -541,12 +569,12 @@ class ScaleService {
         return null;
       }
 
-      // Pequeno delay para dar tempo à balança responder
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Delay mais generoso para dar tempo à balança responder
+      await Future.delayed(const Duration(milliseconds: 80));
 
-      // Ler resposta
-      AppLogger.d('📥 A aguardar resposta (500ms timeout)...');
-      final response = await _readWithTimeout(const Duration(milliseconds: 500));
+      // Ler resposta com timeout aumentado
+      AppLogger.d('📥 A aguardar resposta (700ms timeout)...');
+      final response = await _readWithTimeout(const Duration(milliseconds: 700));
 
       if (response == null || response.isEmpty) {
         AppLogger.w('📥 Sem resposta da balança');

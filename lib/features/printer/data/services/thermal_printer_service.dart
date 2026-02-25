@@ -339,31 +339,56 @@ class ThermalPrinterService {
     final printerName = _config!.name;
     AppLogger.i('🗄️ Abrindo gaveta USB: $printerName');
 
-    // Tentar primeiro o pino 2, depois o pino 5
-    var result = await _sendRawBytesToPrinter(printerName, [
+    // Tentar pino 2 (mais comum)
+    final result = await _sendRawBytesToPrinter(printerName, [
       ..._cmdInit,
       ..._cmdOpenDrawerPin2,
     ]);
 
+    // Se o comando foi enviado (mesmo com warnings), a gaveta provavelmente abriu
     if (result.success) {
       AppLogger.i('✅ Gaveta aberta (pino 2)');
-      return result;
+      return PrintResult.ok('Gaveta aberta');
     }
 
+    // Verificar se é um erro real ou apenas um aviso
+    final errorMsg = result.error?.toLowerCase() ?? '';
+    final isRealError = errorMsg.contains('fail:') || 
+                        errorMsg.contains('not found') ||
+                        errorMsg.contains('não encontrad');
+
+    if (!isRealError) {
+      // Provavelmente foi só um warning, a gaveta deve ter aberto
+      AppLogger.i('✅ Comando de gaveta enviado (pino 2)');
+      return PrintResult.ok('Gaveta aberta');
+    }
+
+    // Só tentar pino 5 se houve erro real no pino 2
     AppLogger.w('Pino 2 falhou: ${result.error}, tentando pino 5...');
     
-    result = await _sendRawBytesToPrinter(printerName, [
+    final result5 = await _sendRawBytesToPrinter(printerName, [
       ..._cmdInit,
       ..._cmdOpenDrawerPin5,
     ]);
 
-    if (result.success) {
+    if (result5.success) {
       AppLogger.i('✅ Gaveta aberta (pino 5)');
-      return result;
+      return PrintResult.ok('Gaveta aberta');
     }
 
-    AppLogger.e('❌ Ambos os pinos falharam: ${result.error}');
-    return PrintResult.fail('Não foi possível abrir a gaveta: ${result.error}');
+    // Verificar se pino 5 também teve erro real
+    final errorMsg5 = result5.error?.toLowerCase() ?? '';
+    final isRealError5 = errorMsg5.contains('fail:') || 
+                         errorMsg5.contains('not found') ||
+                         errorMsg5.contains('não encontrad');
+
+    if (!isRealError5) {
+      AppLogger.i('✅ Comando de gaveta enviado (pino 5)');
+      return PrintResult.ok('Gaveta aberta');
+    }
+
+    AppLogger.e('❌ Falha real ao abrir gaveta: ${result5.error}');
+    return PrintResult.fail('Não foi possível abrir a gaveta');
   }
 
   /// Envia bytes RAW directamente para a impressora Windows

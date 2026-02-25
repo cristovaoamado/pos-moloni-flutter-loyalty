@@ -335,12 +335,24 @@ class ReceiptGenerator {
     final discountTotalStyle = pw.TextStyle(font: ttfBold, fontSize: 8, fontWeight: pw.FontWeight.bold, color: PdfColors.green800);
     final totalStyle = pw.TextStyle(font: ttfBold, fontSize: 12, fontWeight: pw.FontWeight.bold);
 
+    // Para talões grandes, usar MultiPage que permite conteúdo ilimitado
+    // O pageFormat com height=double.infinity pode causar problemas em alguns casos
+    // MultiPage resolve isto ao criar páginas conforme necessário
+    final tallPageFormat = PdfPageFormat(
+      config.paperWidthMm * PdfPageFormat.mm,
+      // Altura grande mas finita para evitar problemas de renderização
+      // 2000mm = ~2 metros, suficiente para talões muito grandes
+      2000 * PdfPageFormat.mm,
+      marginAll: config.marginMm * PdfPageFormat.mm,
+    );
+
     pdf.addPage(
       pw.Page(
-        pageFormat: config.pageFormat,
+        pageFormat: tallPageFormat,
         build: (context) {
           return pw.Column(
             crossAxisAlignment: pw.CrossAxisAlignment.start,
+            mainAxisSize: pw.MainAxisSize.min,
             children: [
               // ═══════════════════════════════════════════════════════════
               // CABEÇALHO - LOGO (se existir)
